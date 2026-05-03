@@ -45,6 +45,7 @@ impl ServiceScope {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceStatus {
     Running,
+    Scheduled,
     Stopped,
     Failed,
     Unloaded,
@@ -56,6 +57,7 @@ impl fmt::Display for ServiceStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Running => write!(f, "running"),
+            Self::Scheduled => write!(f, "scheduled"),
             Self::Stopped => write!(f, "stopped"),
             Self::Failed => write!(f, "failed"),
             Self::Unloaded => write!(f, "unloaded"),

@@ -161,7 +161,7 @@ impl StatusFilter {
             Self::All => "all",
             Self::Running => "running",
             Self::Failed => "failed",
-            Self::Stopped => "stopped",
+            Self::Stopped => "inactive",
         }
     }
 }
@@ -661,14 +661,17 @@ fn matches_status(service: &Service, filter: StatusFilter) -> bool {
         StatusFilter::Failed => service.status == ServiceStatus::Failed,
         StatusFilter::Stopped => matches!(
             service.status,
-            ServiceStatus::Stopped | ServiceStatus::Unloaded | ServiceStatus::Disabled
+            ServiceStatus::Scheduled
+                | ServiceStatus::Stopped
+                | ServiceStatus::Unloaded
+                | ServiceStatus::Disabled
         ),
     }
 }
 
 fn status_detail_action(service: Option<&Service>) -> ActionKind {
     match service.map(|service| &service.status) {
-        Some(ServiceStatus::Running) => ActionKind::Stop,
+        Some(ServiceStatus::Running | ServiceStatus::Scheduled) => ActionKind::Stop,
         Some(ServiceStatus::Stopped | ServiceStatus::Unloaded) => ActionKind::Start,
         Some(ServiceStatus::Failed) => ActionKind::Restart,
         Some(ServiceStatus::Disabled) => ActionKind::ToggleEnabled,
@@ -715,9 +718,10 @@ fn status_rank(status: &ServiceStatus) -> u8 {
         ServiceStatus::Failed => 0,
         ServiceStatus::Disabled => 1,
         ServiceStatus::Running => 2,
-        ServiceStatus::Stopped => 3,
-        ServiceStatus::Unloaded => 4,
-        ServiceStatus::Unknown => 5,
+        ServiceStatus::Scheduled => 3,
+        ServiceStatus::Stopped => 4,
+        ServiceStatus::Unloaded => 5,
+        ServiceStatus::Unknown => 6,
     }
 }
 

@@ -367,7 +367,7 @@ fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<Stri
             service.pid = state.pid;
             service.exit_code = state.exit_code;
             service.loaded = Some(state.loaded);
-            service.status = status_from_state(state);
+            service.status = status_from_state(state, &service.config);
         }
     }
 
@@ -401,7 +401,7 @@ fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<Stri
                 config: LaunchConfig::empty(),
                 pid: state.pid,
                 exit_code: state.exit_code,
-                status: status_from_state(&state),
+                status: status_from_state(&state, &LaunchConfig::empty()),
                 enabled: None,
                 loaded: Some(true),
                 brew_formula: None,
@@ -413,14 +413,20 @@ fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<Stri
     }
 }
 
-fn status_from_state(state: &RuntimeState) -> ServiceStatus {
+fn status_from_state(state: &RuntimeState, config: &LaunchConfig) -> ServiceStatus {
     if state.pid.is_some() {
         ServiceStatus::Running
     } else if state.exit_code.is_some_and(|code| code != 0) {
         ServiceStatus::Failed
+    } else if has_schedule(config) {
+        ServiceStatus::Scheduled
     } else {
         ServiceStatus::Stopped
     }
+}
+
+fn has_schedule(config: &LaunchConfig) -> bool {
+    config.start_interval.is_some() || !config.start_calendar_intervals.is_empty()
 }
 
 fn read_disabled(uid: u32, warnings: &mut Vec<String>) -> HashSet<String> {
@@ -699,5 +705,29 @@ mod tests {
                 .iter()
                 .any(|warning| { warning == "no Program or ProgramArguments in parsed plist" })
         );
+    }
+
+    #[test]
+    fn loaded_scheduled_service_is_not_reported_as_stopped() {
+        let mut config = LaunchConfig::empty();
+        config.start_interval = Some(300);
+
+        let state = RuntimeState {
+            pid: None,
+            exit_code: Some(0),
+            loaded: true,
+        };
+
+        assert_eq!(status_from_state(&state, &config), ServiceStatus::Scheduled);
+    }
+
+    #[test]
+    fn unloaded_scheduled_service_stays_unloaded_until_bootstrapped() {
+        let mut service = service_with_plist(LaunchConfig::empty());
+        service.config.start_interval = Some(300);
+
+        finish_health(&mut service);
+
+        assert_eq!(service.status, ServiceStatus::Unloaded);
     }
 }

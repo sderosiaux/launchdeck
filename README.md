@@ -11,6 +11,7 @@ It is built for the common macOS developer setup where background processes are 
 - Unified service list for `launchd` jobs and Homebrew services
 - Homebrew service discovery through `brew services list --json`
 - Runtime status from `launchctl`
+- Separate `scheduled` status for loaded launchd jobs waiting for their next run
 - Schedule summaries for `StartInterval` and `StartCalendarInterval`
 - Search, source filters, status filters, warnings-only filter, and sorting
 - Detail view with colored fields for service metadata, commands, plist paths, and health warnings

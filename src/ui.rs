@@ -767,6 +767,7 @@ fn selected_service(app: &App) -> Option<&Service> {
 fn status_style(status: &ServiceStatus) -> Style {
     match status {
         ServiceStatus::Running => Style::default().fg(Color::Green),
+        ServiceStatus::Scheduled => Style::default().fg(Color::Cyan),
         ServiceStatus::Failed => Style::default().fg(Color::Red),
         ServiceStatus::Disabled => Style::default().fg(Color::Yellow),
         ServiceStatus::Unloaded => Style::default().fg(Color::DarkGray),
