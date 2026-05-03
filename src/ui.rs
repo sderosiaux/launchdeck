@@ -35,6 +35,9 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     if app.create_form.is_some() {
         draw_create_form(frame, app);
     }
+    if app.show_help {
+        draw_help(frame);
+    }
 }
 
 fn draw_header(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
@@ -174,7 +177,7 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     } else if app.mode == ViewMode::Detail {
         "up/down navigate detail | enter open stdout/stderr | l logs | s/x/R/e actions | esc back"
     } else {
-        "q quit | / find | c clear | f source | F status | o sort | a apple | w warn | n new"
+        "q quit | ? help | / find | c clear | f source | F status | o sort | a apple | w warn | n new"
     };
     let text = vec![
         Line::from(keys),
@@ -453,6 +456,75 @@ fn draw_create_form(frame: &mut Frame<'_>, app: &App) {
     });
     frame.render_widget(block, area);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn draw_help(frame: &mut Frame<'_>) {
+    let area = centered_rect(frame.area(), 78, 74);
+    frame.render_widget(Clear, area);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            "Keyboard Shortcuts",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        help_line("Global", "q quit | ?/F1 help | esc/backspace/left back"),
+        help_line(
+            "Overview",
+            "j/k or arrows move | PgUp/PgDn page | enter detail",
+        ),
+        help_line(
+            "Filters",
+            "/ search | c clear | f source | F status | o sort | a apple | w warnings",
+        ),
+        help_line(
+            "Actions",
+            "s start | x stop | R restart | e enable/disable | y/enter confirm",
+        ),
+        help_line(
+            "Detail",
+            "j/k or arrows move inside | enter opens selected stdout/stderr",
+        ),
+        help_line(
+            "Logs",
+            "j/down newer | k/up older | PgUp/PgDn | g top | G bottom | tab stream",
+        ),
+        help_line(
+            "Create",
+            "n new | tab/down/right next | shift-tab/up/left previous",
+        ),
+        help_line(
+            "Create save",
+            "space toggles booleans | ctrl+s/F5 save | esc cancel",
+        ),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Help closes with esc, backspace, left, enter, ? or F1.",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let block = Block::default().title("Help").borders(Borders::ALL);
+    let inner = block.inner(area).inner(Margin {
+        vertical: 1,
+        horizontal: 2,
+    });
+    frame.render_widget(block, area);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn help_line<'a>(label: &'static str, value: &'static str) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(
+            format!("{label:<13}"),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(value),
+    ])
 }
 
 fn create_field_line<'a>(form: &CreateServiceForm, field: CreateField) -> Line<'a> {

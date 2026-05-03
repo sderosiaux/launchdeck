@@ -217,6 +217,7 @@ pub struct App {
     pub log_scroll: usize,
     pub editing_search: bool,
     pub mode: ViewMode,
+    pub show_help: bool,
     pub pending_action: Option<ActionPlan>,
     pub create_form: Option<CreateServiceForm>,
     pub refresh_requested: bool,
@@ -244,6 +245,7 @@ impl App {
             log_scroll: 0,
             editing_search: false,
             mode: ViewMode::Overview,
+            show_help: false,
             pending_action: None,
             create_form: None,
             refresh_requested: false,
@@ -684,6 +686,7 @@ fn receive_refresh(refresh_rx: &Receiver<Inventory>) -> Option<Inventory> {
 fn should_refresh(app: &App, refresh_in_progress: bool) -> bool {
     if refresh_in_progress
         || app.editing_search
+        || app.show_help
         || app.pending_action.is_some()
         || app.create_form.is_some()
     {
@@ -702,6 +705,28 @@ fn spawn_refresh(refresh_tx: Sender<Inventory>) {
 fn handle_key(app: &mut App, key: KeyEvent) -> bool {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return true;
+    }
+
+    if matches!(key.code, KeyCode::Char('?') | KeyCode::F(1)) {
+        app.show_help = !app.show_help;
+        app.status_line = if app.show_help {
+            "help opened".to_string()
+        } else {
+            "help closed".to_string()
+        };
+        return false;
+    }
+
+    if app.show_help {
+        match key.code {
+            KeyCode::Char('q') => return true,
+            KeyCode::Esc | KeyCode::Backspace | KeyCode::Left | KeyCode::Enter => {
+                app.show_help = false;
+                app.status_line = "help closed".to_string();
+            }
+            _ => {}
+        }
+        return false;
     }
 
     if app.create_form.is_some() {

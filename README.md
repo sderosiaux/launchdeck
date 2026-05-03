@@ -66,6 +66,7 @@ cargo run -- --list
 | `k` / `Up` | Move up |
 | `PageDown` | Move down by a page |
 | `PageUp` | Move up by a page |
+| `?` / `F1` | Open keyboard help |
 | `/` | Search |
 | `c` | Clear search |
 | `f` | Cycle source filter |
