@@ -86,6 +86,7 @@ jobs:
           export GH_TOKEN="${TAP_GITHUB_TOKEN}"
           gh repo clone sderosiaux/homebrew-tap tap
           cd tap
+          git remote set-url origin "https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/sderosiaux/homebrew-tap.git"
           mkdir -p Formula
           cat > Formula/launchdeck.rb <<EOF
           class Launchdeck < Formula
