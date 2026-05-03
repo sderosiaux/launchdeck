@@ -417,11 +417,7 @@ fn parse_disabled(domain: &str, text: &str, disabled: &mut HashSet<String>) {
             continue;
         }
         if let Some((label, _)) = trimmed.split_once("=>") {
-            disabled.insert(format!(
-                "{}:{}",
-                domain,
-                label.trim().trim_matches('"').to_string()
-            ));
+            disabled.insert(format!("{}:{}", domain, label.trim().trim_matches('"')));
         }
     }
 }
@@ -556,12 +552,12 @@ fn finish_health(service: &mut Service) {
             .push("no source plist discovered for loaded service".to_string());
     }
 
-    if let Some(path) = &service.plist_path {
-        if !path.exists() {
-            service
-                .health
-                .push(format!("plist path does not exist: {}", path.display()));
-        }
+    if let Some(path) = &service.plist_path
+        && !path.exists()
+    {
+        service
+            .health
+            .push(format!("plist path does not exist: {}", path.display()));
     }
 
     if service.config.program.is_none() && service.config.arguments.is_empty() {
@@ -575,11 +571,11 @@ fn finish_health(service: &mut Service) {
         .arguments
         .first()
         .or(service.config.program.as_ref())
+        && program.starts_with('/')
+        && !Path::new(program).exists()
     {
-        if program.starts_with('/') && !Path::new(program).exists() {
-            service
-                .health
-                .push(format!("executable does not exist: {program}"));
-        }
+        service
+            .health
+            .push(format!("executable does not exist: {program}"));
     }
 }

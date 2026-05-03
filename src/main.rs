@@ -13,10 +13,10 @@ use std::io::{self, Write};
 fn main() -> Result<()> {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--list") {
-        if let Err(err) = print_inventory(discovery::load_inventory()) {
-            if err.kind() != io::ErrorKind::BrokenPipe {
-                return Err(err.into());
-            }
+        if let Err(err) = print_inventory(discovery::load_inventory())
+            && err.kind() != io::ErrorKind::BrokenPipe
+        {
+            return Err(err.into());
         }
         return Ok(());
     }

@@ -166,6 +166,7 @@ rm ~/Library/LaunchAgents/com.sderosiaux.launchdeck.fake.plist
 cargo fmt
 cargo check --message-format=short
 cargo run -- --list
+scripts/lint.sh
 ```
 
 ## Requirements

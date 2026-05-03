@@ -206,18 +206,19 @@ fn draw_detail(frame: &mut Frame<'_>, app: &mut App) {
     });
     frame.render_widget(block, area);
 
-    let mut header = Vec::new();
-    header.push(Line::from(vec![
-        Span::styled(
-            service.display_name.clone(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(service.label.clone(), Style::default().fg(Color::DarkGray)),
-    ]));
-    header.push(Line::from(""));
+    let header = vec![
+        Line::from(vec![
+            Span::styled(
+                service.display_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(service.label.clone(), Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(""),
+    ];
 
     let visible_rows = usize::from(inner.height.saturating_sub(header.len() as u16)).max(1);
     sync_detail_viewport(app, visible_rows);

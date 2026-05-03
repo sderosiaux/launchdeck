@@ -818,16 +818,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('k') | KeyCode::Up => app.move_up(),
         KeyCode::PageDown => app.page_down(),
         KeyCode::PageUp => app.page_up(),
-        KeyCode::Enter => {
-            if app.selected_service().is_some() {
-                app.open_detail();
-            }
-        }
-        KeyCode::Char('l') => {
-            if app.selected_service().is_some() {
-                app.open_logs(LogStream::Stdout);
-            }
-        }
+        KeyCode::Enter if app.selected_service().is_some() => app.open_detail(),
+        KeyCode::Char('l') if app.selected_service().is_some() => app.open_logs(LogStream::Stdout),
         KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.mode = ViewMode::Overview,
         KeyCode::Char('s') => app.plan_action(ActionKind::Start),
         KeyCode::Char('x') => app.plan_action(ActionKind::Stop),

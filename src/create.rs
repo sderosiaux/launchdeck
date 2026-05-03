@@ -487,10 +487,10 @@ mod tests {
     }
 
     #[test]
-    fn program_arguments_preserve_shell_quoted_values() {
+    fn program_arguments_preserve_shell_quoted_values() -> Result<()> {
         let form = form_with_arguments(r#"--name "hello world" 'single quoted' plain"#);
 
-        let args = program_argument_strings(&form).expect("arguments parse");
+        let args = program_argument_strings(&form)?;
 
         assert_eq!(
             args,
@@ -502,21 +502,24 @@ mod tests {
                 "plain"
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn invalid_argument_quoting_is_rejected() {
+    fn invalid_argument_quoting_is_rejected() -> Result<()> {
         let form = form_with_arguments(r#""unterminated"#);
 
-        let err = validate(&form).expect_err("unterminated quotes should fail");
+        let Err(err) = validate(&form) else {
+            bail!("unterminated quotes should fail");
+        };
 
         assert!(err.to_string().contains("shell-style quoting"));
+        Ok(())
     }
 
     #[test]
-    fn environment_preserves_quoted_values() {
-        let environment = parse_environment(r#"GREETING="hello world" EMPTY= PLAIN=value"#)
-            .expect("environment parses");
+    fn environment_preserves_quoted_values() -> Result<()> {
+        let environment = parse_environment(r#"GREETING="hello world" EMPTY= PLAIN=value"#)?;
 
         assert_eq!(
             environment,
@@ -526,51 +529,62 @@ mod tests {
                 ("PLAIN".to_string(), "value".to_string())
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn invalid_environment_assignment_is_rejected() {
-        let err = parse_environment("NO_EQUALS").expect_err("assignment should fail");
+    fn invalid_environment_assignment_is_rejected() -> Result<()> {
+        let Err(err) = parse_environment("NO_EQUALS") else {
+            bail!("assignment should fail");
+        };
 
         assert!(err.to_string().contains("KEY=value"));
+        Ok(())
     }
 
     #[test]
-    fn start_interval_must_be_positive() {
-        assert_eq!(parse_start_interval("").unwrap(), None);
-        assert_eq!(parse_start_interval("60").unwrap(), Some(60));
+    fn start_interval_must_be_positive() -> Result<()> {
+        assert_eq!(parse_start_interval("")?, None);
+        assert_eq!(parse_start_interval("60")?, Some(60));
 
-        let err = parse_start_interval("0").expect_err("zero interval should fail");
+        let Err(err) = parse_start_interval("0") else {
+            bail!("zero interval should fail");
+        };
         assert!(err.to_string().contains("greater than 0"));
+        Ok(())
     }
 
     #[test]
-    fn start_now_enables_bootstrap_now() {
+    fn start_now_enables_bootstrap_now() -> Result<()> {
         let mut form = form_with_arguments("");
-        form.selected = FIELDS
+        let selected = FIELDS
             .iter()
             .position(|field| *field == CreateField::StartNow)
-            .unwrap();
+            .context("StartNow field missing")?;
+        form.selected = selected;
 
         form.toggle();
 
         assert!(form.start_now);
         assert!(form.bootstrap_now);
+        Ok(())
     }
 
     #[test]
-    fn disabling_bootstrap_disables_start_now() {
+    fn disabling_bootstrap_disables_start_now() -> Result<()> {
         let mut form = form_with_arguments("");
         form.bootstrap_now = true;
         form.start_now = true;
-        form.selected = FIELDS
+        let selected = FIELDS
             .iter()
             .position(|field| *field == CreateField::BootstrapNow)
-            .unwrap();
+            .context("BootstrapNow field missing")?;
+        form.selected = selected;
 
         form.toggle();
 
         assert!(!form.bootstrap_now);
         assert!(!form.start_now);
+        Ok(())
     }
 }
