@@ -407,7 +407,7 @@ fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<Stri
                 brew_formula: None,
                 brew_status: None,
                 safety_level: SafetyLevel::ProtectedVendor,
-                health: vec!["loaded service has no discovered plist".to_string()],
+                health: Vec::new(),
             },
         );
     }
@@ -586,23 +586,27 @@ fn status_from_brew(status: &str, exit_code: Option<i32>) -> ServiceStatus {
 
 fn finish_health(service: &mut Service) {
     if service.plist_path.is_none() {
-        service
-            .health
-            .push("no source plist discovered for loaded service".to_string());
+        push_unique_health(
+            service,
+            "no source plist discovered for loaded service".to_string(),
+        );
+        return;
+    }
+
+    if service.config.program.is_none() && service.config.arguments.is_empty() {
+        push_unique_health(
+            service,
+            "no Program or ProgramArguments in parsed plist".to_string(),
+        );
     }
 
     if let Some(path) = &service.plist_path
         && !path.exists()
     {
-        service
-            .health
-            .push(format!("plist path does not exist: {}", path.display()));
-    }
-
-    if service.config.program.is_none() && service.config.arguments.is_empty() {
-        service
-            .health
-            .push("no Program or ProgramArguments in parsed plist".to_string());
+        push_unique_health(
+            service,
+            format!("plist path does not exist: {}", path.display()),
+        );
     }
 
     if let Some(program) = service
@@ -613,8 +617,87 @@ fn finish_health(service: &mut Service) {
         && program.starts_with('/')
         && !Path::new(program).exists()
     {
-        service
-            .health
-            .push(format!("executable does not exist: {program}"));
+        push_unique_health(service, format!("executable does not exist: {program}"));
+    }
+}
+
+fn push_unique_health(service: &mut Service, warning: String) {
+    if !service.health.contains(&warning) {
+        service.health.push(warning);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn service_with_plist(config: LaunchConfig) -> Service {
+        Service {
+            id: "gui/501:com.example.demo".to_string(),
+            label: "com.example.demo".to_string(),
+            display_name: "com.example.demo".to_string(),
+            source: ServiceSource::Launchd,
+            scope: ServiceScope::UserAgent,
+            domain: "gui/501".to_string(),
+            plist_path: Some(PathBuf::from("/tmp/com.example.demo.plist")),
+            config,
+            pid: None,
+            exit_code: None,
+            status: ServiceStatus::Unloaded,
+            enabled: Some(true),
+            loaded: Some(false),
+            brew_formula: None,
+            brew_status: None,
+            safety_level: SafetyLevel::UserWritable,
+            health: Vec::new(),
+        }
+    }
+
+    fn runtime_only_service() -> Service {
+        Service {
+            id: "gui/501:com.example.runtime".to_string(),
+            label: "com.example.runtime".to_string(),
+            display_name: "com.example.runtime".to_string(),
+            source: ServiceSource::Launchd,
+            scope: ServiceScope::UserAgent,
+            domain: "gui/501".to_string(),
+            plist_path: None,
+            config: LaunchConfig::empty(),
+            pid: Some(123),
+            exit_code: None,
+            status: ServiceStatus::Running,
+            enabled: None,
+            loaded: Some(true),
+            brew_formula: None,
+            brew_status: None,
+            safety_level: SafetyLevel::ProtectedVendor,
+            health: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn runtime_only_service_health_does_not_claim_parsed_plist() {
+        let mut service = runtime_only_service();
+
+        finish_health(&mut service);
+
+        assert_eq!(
+            service.health,
+            vec!["no source plist discovered for loaded service".to_string()]
+        );
+    }
+
+    #[test]
+    fn parsed_plist_without_program_gets_program_warning() {
+        let mut service = service_with_plist(LaunchConfig::empty());
+
+        finish_health(&mut service);
+
+        assert!(
+            service
+                .health
+                .iter()
+                .any(|warning| { warning == "no Program or ProgramArguments in parsed plist" })
+        );
     }
 }
