@@ -37,7 +37,7 @@ impl ServiceScope {
         match self {
             Self::UserAgent => "user agent",
             Self::GlobalAgent => "global agent",
-            Self::SystemDaemon => "daemon",
+            Self::SystemDaemon => "system",
         }
     }
 }
