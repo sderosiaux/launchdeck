@@ -42,13 +42,13 @@ fn print_inventory(inventory: Inventory) -> io::Result<()> {
     let mut stdout = stdout.lock();
     writeln!(
         stdout,
-        "{:<10} {:<7} {:<13} {:<8} {:<6} {:<8} {:<24} NAME",
-        "STATUS", "SOURCE", "SCOPE", "PID", "EXIT", "HEALTH", "SCHEDULE"
+        "{:<10} {:<7} {:<13} {:<8} {:<6} {:<24} NAME",
+        "STATUS", "SOURCE", "SCOPE", "PID", "LOAD", "SCHEDULE"
     )?;
     for service in inventory.services {
         writeln!(
             stdout,
-            "{:<10} {:<7} {:<13} {:<8} {:<6} {:<8} {:<24} {}",
+            "{:<10} {:<7} {:<13} {:<8} {:<6} {:<24} {}",
             service.status,
             service.source,
             service.scope.label(),
@@ -56,11 +56,7 @@ fn print_inventory(inventory: Inventory) -> io::Result<()> {
                 .pid
                 .map(|pid| pid.to_string())
                 .unwrap_or_else(|| "-".to_string()),
-            service
-                .exit_code
-                .map(|code| code.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            service.health.len(),
+            run_at_load_label(service.config.run_at_load),
             service.config.schedule_summary(),
             service.display_name
         )?;
@@ -75,4 +71,12 @@ fn print_inventory(inventory: Inventory) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+fn run_at_load_label(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "-",
+    }
 }

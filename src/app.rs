@@ -240,7 +240,7 @@ impl App {
             search: String::new(),
             source_filter: SourceFilter::All,
             status_filter: StatusFilter::All,
-            sort_mode: SortMode::Name,
+            sort_mode: SortMode::Status,
             show_apple: false,
             warnings_only: false,
             detail_selected: 0,

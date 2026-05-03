@@ -76,9 +76,8 @@ fn draw_overview(frame: &mut Frame<'_>, app: &mut App, area: ratatui::layout::Re
         Cell::from("source"),
         Cell::from("scope"),
         Cell::from("pid"),
-        Cell::from("exit"),
+        Cell::from("load"),
         Cell::from("schedule"),
-        Cell::from("health"),
         Cell::from("path"),
     ])
     .style(Style::default().add_modifier(Modifier::BOLD));
@@ -117,14 +116,8 @@ fn draw_overview(frame: &mut Frame<'_>, app: &mut App, area: ratatui::layout::Re
                                 .map(|pid| pid.to_string())
                                 .unwrap_or_else(|| "-".to_string()),
                         ),
-                        Cell::from(
-                            service
-                                .exit_code
-                                .map(|code| code.to_string())
-                                .unwrap_or_else(|| "-".to_string()),
-                        ),
+                        Cell::from(run_at_load_label(service.config.run_at_load)),
                         Cell::from(service.config.schedule_summary()),
-                        Cell::from(service.health.len().to_string()),
                         Cell::from(path),
                     ])
                     .style(style),
@@ -141,8 +134,7 @@ fn draw_overview(frame: &mut Frame<'_>, app: &mut App, area: ratatui::layout::Re
             Constraint::Length(7),
             Constraint::Length(6),
             Constraint::Length(19),
-            Constraint::Length(7),
-            Constraint::Percentage(35),
+            Constraint::Percentage(43),
         ],
     )
     .header(header)
@@ -719,6 +711,14 @@ fn status_style(status: &ServiceStatus) -> Style {
         ServiceStatus::Disabled => Style::default().fg(Color::Yellow),
         ServiceStatus::Unloaded => Style::default().fg(Color::DarkGray),
         ServiceStatus::Stopped | ServiceStatus::Unknown => Style::default(),
+    }
+}
+
+fn run_at_load_label(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "-",
     }
 }
 
