@@ -496,10 +496,10 @@ impl App {
         };
 
         match create::write_user_agent(form) {
-            Ok(path) => {
+            Ok(outcome) => {
                 self.create_form = None;
                 self.refresh_requested = true;
-                self.status_line = format!("created {}", path.display());
+                self.status_line = outcome.status_message();
             }
             Err(err) => {
                 self.status_line = format!("create failed: {err}");
@@ -822,7 +822,10 @@ fn handle_create_key(app: &mut App, key: KeyEvent) {
                 KeyCode::Char(' ') => {
                     if matches!(
                         form.current_field(),
-                        create::CreateField::RunAtLoad | create::CreateField::KeepAlive
+                        create::CreateField::RunAtLoad
+                            | create::CreateField::KeepAlive
+                            | create::CreateField::BootstrapNow
+                            | create::CreateField::StartNow
                     ) {
                         form.toggle();
                     } else {

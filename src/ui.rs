@@ -434,10 +434,10 @@ fn draw_create_form(frame: &mut Frame<'_>, app: &App) {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled(
-            "Save writes a plist only. ",
+            "Creation is user-only. ",
             Style::default().fg(Color::Yellow),
         ),
-        Span::raw("It does not bootstrap or start the service."),
+        Span::raw("Optional bootstrap/start runs launchctl in the current gui domain."),
     ]));
     lines.push(Line::from(vec![
         Span::styled("Arguments ", Style::default().fg(Color::DarkGray)),
@@ -469,7 +469,10 @@ fn create_field_line<'a>(form: &CreateServiceForm, field: CreateField) -> Line<'
             .add_modifier(Modifier::BOLD)
     };
     let value_style = match field {
-        CreateField::RunAtLoad | CreateField::KeepAlive => Style::default().fg(Color::Yellow),
+        CreateField::RunAtLoad
+        | CreateField::KeepAlive
+        | CreateField::BootstrapNow
+        | CreateField::StartNow => Style::default().fg(Color::Yellow),
         CreateField::Command
         | CreateField::WorkingDirectory
         | CreateField::Stdout

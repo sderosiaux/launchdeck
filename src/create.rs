@@ -14,6 +14,8 @@ pub enum CreateField {
     Stderr,
     RunAtLoad,
     KeepAlive,
+    BootstrapNow,
+    StartNow,
 }
 
 impl CreateField {
@@ -27,15 +29,20 @@ impl CreateField {
             Self::Stderr => "Stderr path",
             Self::RunAtLoad => "Run at load",
             Self::KeepAlive => "Keep alive",
+            Self::BootstrapNow => "Bootstrap now",
+            Self::StartNow => "Start now",
         }
     }
 
     fn editable(self) -> bool {
-        !matches!(self, Self::RunAtLoad | Self::KeepAlive)
+        !matches!(
+            self,
+            Self::RunAtLoad | Self::KeepAlive | Self::BootstrapNow | Self::StartNow
+        )
     }
 }
 
-const FIELDS: [CreateField; 8] = [
+const FIELDS: [CreateField; 10] = [
     CreateField::Label,
     CreateField::Command,
     CreateField::Arguments,
@@ -44,6 +51,8 @@ const FIELDS: [CreateField; 8] = [
     CreateField::Stderr,
     CreateField::RunAtLoad,
     CreateField::KeepAlive,
+    CreateField::BootstrapNow,
+    CreateField::StartNow,
 ];
 
 #[derive(Clone, Debug)]
@@ -56,7 +65,25 @@ pub struct CreateServiceForm {
     pub stderr_path: String,
     pub run_at_load: bool,
     pub keep_alive: bool,
+    pub bootstrap_now: bool,
+    pub start_now: bool,
     pub selected: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct CreateOutcome {
+    pub path: PathBuf,
+    pub steps: Vec<String>,
+}
+
+impl CreateOutcome {
+    pub fn status_message(&self) -> String {
+        if self.steps.is_empty() {
+            format!("created {}", self.path.display())
+        } else {
+            format!("created {}; {}", self.path.display(), self.steps.join("; "))
+        }
+    }
 }
 
 impl CreateServiceForm {
@@ -70,6 +97,8 @@ impl CreateServiceForm {
             stderr_path: String::new(),
             run_at_load: false,
             keep_alive: false,
+            bootstrap_now: false,
+            start_now: false,
             selected: 0,
         }
     }
@@ -92,6 +121,8 @@ impl CreateServiceForm {
             CreateField::Stderr => empty_marker(&self.stderr_path),
             CreateField::RunAtLoad => bool_marker(self.run_at_load),
             CreateField::KeepAlive => bool_marker(self.keep_alive),
+            CreateField::BootstrapNow => bool_marker(self.bootstrap_now),
+            CreateField::StartNow => bool_marker(self.start_now),
         }
     }
 
@@ -125,6 +156,18 @@ impl CreateServiceForm {
         match self.current_field() {
             CreateField::RunAtLoad => self.run_at_load = !self.run_at_load,
             CreateField::KeepAlive => self.keep_alive = !self.keep_alive,
+            CreateField::BootstrapNow => {
+                self.bootstrap_now = !self.bootstrap_now;
+                if !self.bootstrap_now {
+                    self.start_now = false;
+                }
+            }
+            CreateField::StartNow => {
+                self.start_now = !self.start_now;
+                if self.start_now {
+                    self.bootstrap_now = true;
+                }
+            }
             _ => {}
         }
     }
@@ -144,12 +187,15 @@ impl CreateServiceForm {
             CreateField::WorkingDirectory => &mut self.working_directory,
             CreateField::Stdout => &mut self.stdout_path,
             CreateField::Stderr => &mut self.stderr_path,
-            CreateField::RunAtLoad | CreateField::KeepAlive => unreachable!(),
+            CreateField::RunAtLoad
+            | CreateField::KeepAlive
+            | CreateField::BootstrapNow
+            | CreateField::StartNow => unreachable!(),
         }
     }
 }
 
-pub fn write_user_agent(form: &CreateServiceForm) -> Result<PathBuf> {
+pub fn write_user_agent(form: &CreateServiceForm) -> Result<CreateOutcome> {
     validate(form)?;
 
     let path = form.target_path()?;
@@ -180,7 +226,23 @@ pub fn write_user_agent(form: &CreateServiceForm) -> Result<PathBuf> {
         .with_context(|| format!("write {}", path.display()))?;
 
     lint_plist(&path)?;
-    Ok(path)
+
+    let mut steps = Vec::new();
+    if form.bootstrap_now {
+        steps.push(run_launchctl(&[
+            "bootstrap",
+            &current_gui_domain()?,
+            &path.display().to_string(),
+        ]));
+    }
+    if form.start_now {
+        steps.push(run_launchctl(&[
+            "kickstart",
+            &format!("{}/{}", current_gui_domain()?, form.label.trim()),
+        ]));
+    }
+
+    Ok(CreateOutcome { path, steps })
 }
 
 fn validate(form: &CreateServiceForm) -> Result<()> {
@@ -211,6 +273,9 @@ fn validate(form: &CreateServiceForm) -> Result<()> {
     validate_parent("stdout path", &form.stdout_path, false)?;
     validate_parent("stderr path", &form.stderr_path, false)?;
     parse_argument_tail(&form.arguments)?;
+    if form.start_now && !form.bootstrap_now {
+        bail!("start now requires bootstrap now");
+    }
 
     Ok(())
 }
@@ -278,6 +343,38 @@ fn lint_plist(path: &PathBuf) -> Result<()> {
     }
 }
 
+fn current_gui_domain() -> Result<String> {
+    let output = Command::new("id").arg("-u").output().context("run id -u")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("id -u failed: {}", stderr.trim());
+    }
+    let uid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if uid.is_empty() {
+        bail!("id -u returned an empty uid");
+    }
+    Ok(format!("gui/{uid}"))
+}
+
+fn run_launchctl(args: &[&str]) -> String {
+    let output = Command::new("launchctl").args(args).output();
+    let command = format!("launchctl {}", args.join(" "));
+    match output {
+        Ok(output) if output.status.success() => format!("{command}: ok"),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let message = if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            };
+            format!("{command}: failed {message}")
+        }
+        Err(err) => format!("{command}: failed {err}"),
+    }
+}
+
 fn empty_marker(value: &str) -> String {
     if value.is_empty() {
         "-".to_string()
@@ -339,5 +436,35 @@ mod tests {
         let err = validate(&form).expect_err("unterminated quotes should fail");
 
         assert!(err.to_string().contains("shell-style quoting"));
+    }
+
+    #[test]
+    fn start_now_enables_bootstrap_now() {
+        let mut form = form_with_arguments("");
+        form.selected = FIELDS
+            .iter()
+            .position(|field| *field == CreateField::StartNow)
+            .unwrap();
+
+        form.toggle();
+
+        assert!(form.start_now);
+        assert!(form.bootstrap_now);
+    }
+
+    #[test]
+    fn disabling_bootstrap_disables_start_now() {
+        let mut form = form_with_arguments("");
+        form.bootstrap_now = true;
+        form.start_now = true;
+        form.selected = FIELDS
+            .iter()
+            .position(|field| *field == CreateField::BootstrapNow)
+            .unwrap();
+
+        form.toggle();
+
+        assert!(!form.bootstrap_now);
+        assert!(!form.start_now);
     }
 }

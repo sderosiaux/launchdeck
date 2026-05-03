@@ -125,7 +125,7 @@ The log view opens at the end of the selected stream and keeps a scrollback wind
 | `Ctrl+S` / `F5` | Save plist |
 | `Esc` | Cancel |
 
-The create form currently writes user LaunchAgents only. It does not bootstrap or start the service.
+The create form writes user LaunchAgents only. It can optionally bootstrap the plist and kickstart the job in the current `gui/<uid>` domain after saving.
 Arguments accept shell-style quotes, so values such as `--name "hello world"` are preserved as one argument.
 
 ## Safety
@@ -171,4 +171,4 @@ cargo run -- --list
 
 ## Status
 
-Launchdeck is early software. The current build is useful for service inventory, inspection, filtering, navigable log files, guarded actions, and creating user LaunchAgents. Bootstrap/start after creation and sudo-backed admin actions are not implemented yet.
+Launchdeck is early software. The current build is useful for service inventory, inspection, filtering, navigable log files, guarded actions, and creating user LaunchAgents. Sudo-backed admin actions are not implemented yet.
