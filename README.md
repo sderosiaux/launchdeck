@@ -5,11 +5,25 @@
 [![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](#requirements)
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-orange)](Cargo.toml)
 
-Keyboard-first macOS TUI for inspecting and managing `launchd` jobs and Homebrew services from one place.
+The missing service dashboard for macOS.
 
-Launchdeck is built for developer machines where background work is split between raw plist files in `~/Library/LaunchAgents` and services managed by `brew services`.
+Launchdeck gives `launchd` jobs and Homebrew services one fast, readable control surface: status, schedules, plist metadata, logs, and guarded actions without spelunking through `launchctl`, `brew services`, and scattered plist files.
+
+It is built for real developer machines, where background work lives across `~/Library/LaunchAgents`, `/Library/LaunchDaemons`, Apple-managed jobs, vendor helpers, and Homebrew formulas. Launchdeck keeps the noisy system universe available when you need it, but starts with the services you are most likely to care about.
 
 ![Launchdeck TUI](assets/launchdeck.gif)
+
+## Why Launchdeck?
+
+macOS service management is powerful, but the day-to-day experience is fragmented:
+
+- `launchctl` knows runtime state, but its output is dense and domain-oriented.
+- Plist files explain schedules, logs, `RunAtLoad`, and `KeepAlive`, but they are spread across multiple directories.
+- `brew services` is convenient, but only sees the Homebrew side of the world.
+- A stopped process might actually be a scheduled job waiting for its next run.
+- Killing a process is not the same thing as unloading a launchd job.
+
+Launchdeck brings those pieces together and adds the safety rails you want before changing anything. It shows the command before it runs, blocks risky system/vendor actions, preserves selection by service identity across refreshes, and makes logs and schedules visible where you make decisions.
 
 ## Install
 
@@ -72,16 +86,16 @@ launchdeck list --all
 
 ## Features
 
-- Unified service list for `launchd` jobs and Homebrew services.
-- Runtime status from `launchctl`, plus Homebrew metadata from `brew services list --json`.
-- `scheduled` status for loaded launchd jobs waiting for their next `StartInterval` or `StartCalendarInterval`.
-- Compact schedule summaries such as `5min`, `1h`, `00:00`, or `Sun 09:00`.
-- Type-to-search on the main screen, with filters for source, status, Apple/system services, warnings, and sorting.
-- Detail modal with colored fields for status, command, plist path, schedule, logs, and health warnings.
+- One service list for `launchd` jobs and Homebrew services.
+- Runtime state from `launchctl`, enriched with Homebrew metadata and parsed plist configuration.
+- A distinct `scheduled` state for loaded jobs that are not running now but will wake up later.
+- Compact schedule summaries such as `5min`, `1h`, `00:00`, and `Sun 09:00`.
+- Type-to-search, source/status filters, warnings-only view, Apple/system toggle, and practical sorting.
+- Detail modal for status, scope, safety level, command, plist path, schedule, logs, and health warnings.
 - Scrollable stdout/stderr log view from configured `StandardOutPath` and `StandardErrorPath`.
-- Guarded actions for start, stop, restart/load, enable/disable, `RunAtLoad`, edit plist, and delete plist.
-- User LaunchAgent creation form for common plist fields.
-- Background refresh that preserves the selected service by identity, not row index.
+- Confirmed actions for start, stop, restart/load, enable/disable, `RunAtLoad`, edit plist, and delete plist.
+- User LaunchAgent creation for common plist fields without hand-writing XML.
+- Background refresh that keeps the selected service stable by identity, not row index.
 
 ## Status Model
 

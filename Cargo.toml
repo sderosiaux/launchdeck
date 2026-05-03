@@ -2,7 +2,7 @@
 name = "launchdeck"
 version = "0.1.2"
 edition = "2024"
-description = "Keyboard-first macOS TUI for launchd jobs and Homebrew services"
+description = "Unified macOS service console for launchd and Homebrew"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sderosiaux/launchdeck"
 homepage = "https://github.com/sderosiaux/launchdeck"
