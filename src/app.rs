@@ -253,14 +253,32 @@ impl App {
     }
 
     fn apply_inventory(&mut self, inventory: Inventory) {
+        let selected_id = self.selected_service_id();
         self.services = inventory.services;
         self.warnings = inventory.warnings;
-        self.apply_filter();
+        let kept_selection = self.apply_filter_with_selection(selected_id.as_deref());
         self.last_refresh = Instant::now();
-        self.status_line = format!("refreshed {} services", self.services.len());
+        if selected_id.is_some()
+            && !kept_selection
+            && matches!(self.mode, ViewMode::Detail | ViewMode::Logs)
+        {
+            self.mode = ViewMode::Overview;
+            self.detail_scroll = 0;
+            self.log_scroll = 0;
+            self.status_line = format!(
+                "refreshed {} services; selected service left the current view",
+                self.services.len()
+            );
+        } else {
+            self.status_line = format!("refreshed {} services", self.services.len());
+        }
     }
 
     fn apply_filter(&mut self) {
+        self.apply_filter_with_selection(None);
+    }
+
+    fn apply_filter_with_selection(&mut self, selected_id: Option<&str>) -> bool {
         let query = self.search.trim().to_lowercase();
         self.filtered = self
             .services
@@ -287,18 +305,35 @@ impl App {
             })
             .collect();
         sort_filtered(&mut self.filtered, &self.services, self.sort_mode);
-        if self.selected >= self.filtered.len() {
+
+        let restored_selection = selected_id
+            .and_then(|id| {
+                self.filtered
+                    .iter()
+                    .position(|index| self.services[*index].id == id)
+            })
+            .is_some_and(|position| {
+                self.selected = position;
+                true
+            });
+
+        if !restored_selection && self.selected >= self.filtered.len() {
             self.selected = self.filtered.len().saturating_sub(1);
         }
         if self.viewport_start >= self.filtered.len() {
             self.viewport_start = self.filtered.len().saturating_sub(1);
         }
+        restored_selection
     }
 
     fn selected_service(&self) -> Option<&Service> {
         self.filtered
             .get(self.selected)
             .and_then(|index| self.services.get(*index))
+    }
+
+    fn selected_service_id(&self) -> Option<String> {
+        self.selected_service().map(|service| service.id.clone())
     }
 
     fn move_down(&mut self) {
@@ -1074,4 +1109,94 @@ fn handle_search_key(app: &mut App, key: KeyEvent) -> bool {
         _ => {}
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{LaunchConfig, SafetyLevel, ServiceScope};
+    use std::path::PathBuf;
+
+    fn service(label: &str, status: ServiceStatus) -> Service {
+        Service {
+            id: format!("gui/501:{label}"),
+            label: label.to_string(),
+            display_name: label.to_string(),
+            source: ServiceSource::Launchd,
+            scope: ServiceScope::UserAgent,
+            domain: "gui/501".to_string(),
+            plist_path: Some(PathBuf::from(format!("/tmp/{label}.plist"))),
+            config: LaunchConfig::empty(),
+            pid: if status == ServiceStatus::Running {
+                Some(123)
+            } else {
+                None
+            },
+            exit_code: None,
+            status,
+            enabled: Some(true),
+            loaded: Some(true),
+            brew_formula: None,
+            brew_status: None,
+            safety_level: SafetyLevel::UserWritable,
+            health: Vec::new(),
+        }
+    }
+
+    fn inventory(services: Vec<Service>) -> Inventory {
+        Inventory {
+            services,
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn refresh_preserves_selected_service_identity_after_resort() {
+        let mut app = App::new(inventory(vec![
+            service("com.example.selected", ServiceStatus::Running),
+            service("com.example.other", ServiceStatus::Stopped),
+        ]));
+        app.open_detail();
+
+        app.apply_inventory(inventory(vec![
+            service("com.example.selected", ServiceStatus::Unloaded),
+            service("com.example.other", ServiceStatus::Running),
+        ]));
+
+        assert_eq!(app.mode, ViewMode::Detail);
+        assert_eq!(
+            app.selected_service_id().as_deref(),
+            Some("gui/501:com.example.selected")
+        );
+    }
+
+    #[test]
+    fn refresh_closes_detail_when_selected_service_leaves_filter() {
+        let mut app = App::new(inventory(vec![
+            service("com.example.selected", ServiceStatus::Running),
+            service("com.example.other", ServiceStatus::Running),
+        ]));
+        app.status_filter = StatusFilter::Running;
+        app.apply_filter();
+        let Some(position) = app
+            .filtered
+            .iter()
+            .position(|index| app.services[*index].id == "gui/501:com.example.selected")
+        else {
+            panic!("selected service missing from test inventory");
+        };
+        app.selected = position;
+        app.open_detail();
+
+        app.apply_inventory(inventory(vec![
+            service("com.example.selected", ServiceStatus::Unloaded),
+            service("com.example.other", ServiceStatus::Running),
+        ]));
+
+        assert_eq!(app.mode, ViewMode::Overview);
+        assert_eq!(
+            app.selected_service_id().as_deref(),
+            Some("gui/501:com.example.other")
+        );
+    }
 }
