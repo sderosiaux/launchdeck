@@ -186,12 +186,7 @@ fn plan_launchd(service: &Service, kind: ActionKind) -> ActionPlan {
                 vec!["launchctl".to_string(), "kickstart".to_string(), target]
             }
         }
-        ActionKind::Stop => vec![
-            "launchctl".to_string(),
-            "kill".to_string(),
-            "TERM".to_string(),
-            target,
-        ],
+        ActionKind::Stop => vec!["launchctl".to_string(), "bootout".to_string(), target],
         ActionKind::Restart => {
             if service.loaded == Some(false) {
                 let Some(path) = &service.plist_path else {
@@ -288,7 +283,7 @@ fn warning_for_launchd(service: &Service, kind: ActionKind) -> String {
             "This will bootstrap the plist into the launchd domain.".to_string()
         }
         ActionKind::Start => "This will ask launchd to start the selected job.".to_string(),
-        ActionKind::Stop => "This sends TERM to the selected launchd job.".to_string(),
+        ActionKind::Stop => "This unloads the selected launchd job from its domain.".to_string(),
         ActionKind::Restart if service.loaded == Some(false) => {
             "This will bootstrap the plist, then kickstart the launchd job.".to_string()
         }
@@ -419,6 +414,24 @@ mod tests {
                 "open".to_string(),
                 "-t".to_string(),
                 "/tmp/com.example.demo.plist".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn stop_launchd_service_unloads_job() {
+        let plan = plan(
+            &service(ServiceSource::Launchd, Some(false)),
+            ActionKind::Stop,
+        );
+
+        assert!(!plan.is_blocked());
+        assert_eq!(
+            plan.command,
+            vec![
+                "launchctl".to_string(),
+                "bootout".to_string(),
+                "gui/501/com.example.demo".to_string(),
             ]
         );
     }
