@@ -10,6 +10,8 @@ pub enum CreateField {
     Command,
     Arguments,
     WorkingDirectory,
+    Environment,
+    StartInterval,
     Stdout,
     Stderr,
     RunAtLoad,
@@ -25,6 +27,8 @@ impl CreateField {
             Self::Command => "Command",
             Self::Arguments => "Arguments",
             Self::WorkingDirectory => "Working directory",
+            Self::Environment => "Environment",
+            Self::StartInterval => "Start interval",
             Self::Stdout => "Stdout path",
             Self::Stderr => "Stderr path",
             Self::RunAtLoad => "Run at load",
@@ -42,11 +46,13 @@ impl CreateField {
     }
 }
 
-const FIELDS: [CreateField; 10] = [
+const FIELDS: [CreateField; 12] = [
     CreateField::Label,
     CreateField::Command,
     CreateField::Arguments,
     CreateField::WorkingDirectory,
+    CreateField::Environment,
+    CreateField::StartInterval,
     CreateField::Stdout,
     CreateField::Stderr,
     CreateField::RunAtLoad,
@@ -61,6 +67,8 @@ pub struct CreateServiceForm {
     pub command: String,
     pub arguments: String,
     pub working_directory: String,
+    pub environment: String,
+    pub start_interval: String,
     pub stdout_path: String,
     pub stderr_path: String,
     pub run_at_load: bool,
@@ -93,6 +101,8 @@ impl CreateServiceForm {
             command: String::new(),
             arguments: String::new(),
             working_directory: String::new(),
+            environment: String::new(),
+            start_interval: String::new(),
             stdout_path: String::new(),
             stderr_path: String::new(),
             run_at_load: false,
@@ -117,6 +127,8 @@ impl CreateServiceForm {
             CreateField::Command => required_marker(&self.command),
             CreateField::Arguments => empty_marker(&self.arguments),
             CreateField::WorkingDirectory => empty_marker(&self.working_directory),
+            CreateField::Environment => empty_marker(&self.environment),
+            CreateField::StartInterval => empty_marker(&self.start_interval),
             CreateField::Stdout => empty_marker(&self.stdout_path),
             CreateField::Stderr => empty_marker(&self.stderr_path),
             CreateField::RunAtLoad => bool_marker(self.run_at_load),
@@ -185,6 +197,8 @@ impl CreateServiceForm {
             CreateField::Command => &mut self.command,
             CreateField::Arguments => &mut self.arguments,
             CreateField::WorkingDirectory => &mut self.working_directory,
+            CreateField::Environment => &mut self.environment,
+            CreateField::StartInterval => &mut self.start_interval,
             CreateField::Stdout => &mut self.stdout_path,
             CreateField::Stderr => &mut self.stderr_path,
             CreateField::RunAtLoad
@@ -220,6 +234,10 @@ pub fn write_user_agent(form: &CreateServiceForm) -> Result<CreateOutcome> {
     insert_optional_string(&mut dict, "WorkingDirectory", &form.working_directory);
     insert_optional_string(&mut dict, "StandardOutPath", &form.stdout_path);
     insert_optional_string(&mut dict, "StandardErrorPath", &form.stderr_path);
+    insert_environment(&mut dict, &form.environment)?;
+    if let Some(interval) = parse_start_interval(&form.start_interval)? {
+        dict.insert("StartInterval".into(), Value::Integer(interval.into()));
+    }
 
     Value::Dictionary(dict)
         .to_file_xml(&path)
@@ -273,6 +291,8 @@ fn validate(form: &CreateServiceForm) -> Result<()> {
     validate_parent("stdout path", &form.stdout_path, false)?;
     validate_parent("stderr path", &form.stderr_path, false)?;
     parse_argument_tail(&form.arguments)?;
+    parse_environment(&form.environment)?;
+    parse_start_interval(&form.start_interval)?;
     if form.start_now && !form.bootstrap_now {
         bail!("start now requires bootstrap now");
     }
@@ -314,6 +334,61 @@ fn program_argument_strings(form: &CreateServiceForm) -> Result<Vec<String>> {
     let mut args = vec![form.command.trim().to_string()];
     args.extend(parse_argument_tail(&form.arguments)?);
     Ok(args)
+}
+
+fn insert_environment(dict: &mut Dictionary, raw_environment: &str) -> Result<()> {
+    let environment = parse_environment(raw_environment)?;
+    if environment.is_empty() {
+        return Ok(());
+    }
+
+    let mut env_dict = Dictionary::new();
+    for (key, value) in environment {
+        env_dict.insert(key, Value::String(value));
+    }
+    dict.insert("EnvironmentVariables".into(), Value::Dictionary(env_dict));
+    Ok(())
+}
+
+fn parse_environment(raw_environment: &str) -> Result<Vec<(String, String)>> {
+    if raw_environment.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let assignments = shell_words::split(raw_environment)
+        .context("environment must use valid shell-style quoting")?;
+    let mut parsed = Vec::new();
+    for assignment in assignments {
+        let Some((key, value)) = assignment.split_once('=') else {
+            bail!("environment entry must be KEY=value: {assignment}");
+        };
+        if key.is_empty() {
+            bail!("environment variable name cannot be empty");
+        }
+        if !key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            bail!("environment variable name may only contain letters, numbers, and '_': {key}");
+        }
+        parsed.push((key.to_string(), value.to_string()));
+    }
+    Ok(parsed)
+}
+
+fn parse_start_interval(raw_interval: &str) -> Result<Option<u64>> {
+    let raw_interval = raw_interval.trim();
+    if raw_interval.is_empty() {
+        return Ok(None);
+    }
+
+    let interval = raw_interval
+        .parse::<u64>()
+        .with_context(|| format!("start interval must be a positive integer: {raw_interval}"))?;
+    if interval == 0 {
+        bail!("start interval must be greater than 0");
+    }
+    Ok(Some(interval))
 }
 
 fn parse_argument_tail(raw_arguments: &str) -> Result<Vec<String>> {
@@ -436,6 +511,37 @@ mod tests {
         let err = validate(&form).expect_err("unterminated quotes should fail");
 
         assert!(err.to_string().contains("shell-style quoting"));
+    }
+
+    #[test]
+    fn environment_preserves_quoted_values() {
+        let environment = parse_environment(r#"GREETING="hello world" EMPTY= PLAIN=value"#)
+            .expect("environment parses");
+
+        assert_eq!(
+            environment,
+            vec![
+                ("GREETING".to_string(), "hello world".to_string()),
+                ("EMPTY".to_string(), "".to_string()),
+                ("PLAIN".to_string(), "value".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_environment_assignment_is_rejected() {
+        let err = parse_environment("NO_EQUALS").expect_err("assignment should fail");
+
+        assert!(err.to_string().contains("KEY=value"));
+    }
+
+    #[test]
+    fn start_interval_must_be_positive() {
+        assert_eq!(parse_start_interval("").unwrap(), None);
+        assert_eq!(parse_start_interval("60").unwrap(), Some(60));
+
+        let err = parse_start_interval("0").expect_err("zero interval should fail");
+        assert!(err.to_string().contains("greater than 0"));
     }
 
     #[test]

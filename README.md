@@ -127,6 +127,7 @@ The log view opens at the end of the selected stream and keeps a scrollback wind
 
 The create form writes user LaunchAgents only. It can optionally bootstrap the plist and kickstart the job in the current `gui/<uid>` domain after saving.
 Arguments accept shell-style quotes, so values such as `--name "hello world"` are preserved as one argument.
+Environment variables use `KEY=value` entries with the same shell-style quoting, and `StartInterval` accepts a positive number of seconds.
 
 ## Safety
 

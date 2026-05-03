@@ -475,6 +475,8 @@ fn create_field_line<'a>(form: &CreateServiceForm, field: CreateField) -> Line<'
         | CreateField::StartNow => Style::default().fg(Color::Yellow),
         CreateField::Command
         | CreateField::WorkingDirectory
+        | CreateField::Environment
+        | CreateField::StartInterval
         | CreateField::Stdout
         | CreateField::Stderr => Style::default().fg(Color::Green),
         CreateField::Label | CreateField::Arguments => Style::default().fg(Color::Cyan),
