@@ -68,7 +68,8 @@ cargo run -- --list
 | `PageUp` | Move up by a page |
 | `?` / `F1` | Open keyboard help |
 | `/` | Search |
-| `c` | Clear search |
+| `c` | Copy selected service name |
+| `C` | Clear search |
 | `f` | Cycle source filter |
 | `F` | Cycle status filter |
 | `o` | Cycle sort mode |
@@ -96,6 +97,7 @@ Actions show the exact command before execution. Press `y` to confirm or `n`/`Es
 | `PageUp` | Move up by a page |
 | `g` | First detail row |
 | `G` | Last detail row |
+| `c` | Copy selected field value |
 | `Enter` | Open the selected stdout/stderr log row |
 | `l` | Open stdout logs |
 | `Esc` / `Backspace` / `Left` | Back to overview |
@@ -110,6 +112,7 @@ Actions show the exact command before execution. Press `y` to confirm or `n`/`Es
 | `PageUp` | Older page |
 | `g` | Top of loaded tail |
 | `G` | Bottom of loaded tail |
+| `c` | Copy current log path |
 | `Tab` / `Left` / `Right` | Switch stdout/stderr |
 | `Esc` / `Backspace` | Back to detail |
 

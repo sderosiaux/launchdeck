@@ -3,7 +3,7 @@ use crate::create::{self, CreateServiceForm};
 use crate::discovery;
 use crate::model::{Inventory, Service, ServiceSource, ServiceStatus};
 use crate::ui;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -11,7 +11,8 @@ use crossterm::terminal::{
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use std::io;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -331,6 +332,44 @@ impl App {
         self.viewport_start = 0;
         self.apply_filter();
         self.status_line = "search cleared".to_string();
+    }
+
+    fn copy_selected_value(&mut self) {
+        let Some((label, value)) = self.copy_target() else {
+            self.status_line = "nothing selected to copy".to_string();
+            return;
+        };
+
+        let value = value.trim();
+        if value.is_empty() || value == "-" {
+            self.status_line = format!("nothing to copy for {label}");
+            return;
+        }
+
+        match copy_to_clipboard(value) {
+            Ok(()) => self.status_line = format!("copied {label}: {value}"),
+            Err(err) => self.status_line = format!("copy failed: {err}"),
+        }
+    }
+
+    fn copy_target(&self) -> Option<(String, String)> {
+        match self.mode {
+            ViewMode::Overview => self
+                .selected_service()
+                .map(|service| ("service".to_string(), service.display_name.clone())),
+            ViewMode::Detail => self.selected_service().map(|service| {
+                let item = self.selected_detail_item();
+                (item.label().to_string(), detail_item_value(service, item))
+            }),
+            ViewMode::Logs => self.selected_service().map(|service| {
+                let value = match self.log_stream {
+                    LogStream::Stdout => service.config.stdout_path.clone(),
+                    LogStream::Stderr => service.config.stderr_path.clone(),
+                }
+                .unwrap_or_else(|| "-".to_string());
+                (format!("{} path", self.log_stream.label()), value)
+            }),
+        }
     }
 
     fn cycle_source_filter(&mut self) {
@@ -764,7 +803,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
             app.mode = ViewMode::Overview;
             app.status_line = "search mode: type query, enter to apply, esc to cancel".to_string();
         }
-        KeyCode::Char('c') => app.clear_search(),
+        KeyCode::Char('c') => app.copy_selected_value(),
+        KeyCode::Char('C') => app.clear_search(),
         KeyCode::Char('f') => app.cycle_source_filter(),
         KeyCode::Char('F') => app.cycle_status_filter(),
         KeyCode::Char('o') => app.cycle_sort(),
@@ -810,6 +850,7 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::PageUp => app.page_detail_up(),
         KeyCode::Char('g') => app.detail_selected = 0,
         KeyCode::Char('G') => app.detail_selected = DETAIL_ITEMS.len() - 1,
+        KeyCode::Char('c') => app.copy_selected_value(),
         KeyCode::Enter => app.open_selected_detail_item(),
         KeyCode::Char('l') => app.open_logs(LogStream::Stdout),
         KeyCode::Char('s') => app.plan_action(ActionKind::Start),
@@ -874,11 +915,88 @@ fn handle_logs_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::PageUp => app.scroll_logs_up(10),
         KeyCode::Char('G') => app.log_scroll = 0,
         KeyCode::Char('g') => app.log_scroll = usize::MAX / 2,
+        KeyCode::Char('c') => app.copy_selected_value(),
         KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => app.switch_log_stream(),
         KeyCode::Char('l') => app.switch_log_stream(),
         _ => {}
     }
     false
+}
+
+fn detail_item_value(service: &Service, item: DetailItem) -> String {
+    match item {
+        DetailItem::Status => service.status.to_string(),
+        DetailItem::Source => service.source.to_string(),
+        DetailItem::Domain => service.domain.clone(),
+        DetailItem::Scope => service.scope.label().to_string(),
+        DetailItem::Safety => service.safety_level.to_string(),
+        DetailItem::Plist => service
+            .plist_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        DetailItem::BrewFormula => service.brew_formula.as_deref().unwrap_or("-").to_string(),
+        DetailItem::BrewStatus => service.brew_status.as_deref().unwrap_or("-").to_string(),
+        DetailItem::Command => service.config.command_preview(),
+        DetailItem::WorkingDirectory => service
+            .config
+            .working_directory
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::Stdout => service
+            .config
+            .stdout_path
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::Stderr => service
+            .config
+            .stderr_path
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::RunAtLoad => service
+            .config
+            .run_at_load
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        DetailItem::KeepAlive => service
+            .config
+            .keep_alive
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::StartInterval => service
+            .config
+            .start_interval
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        DetailItem::Health => {
+            if service.health.is_empty() {
+                "clean".to_string()
+            } else {
+                service.health.join(" | ")
+            }
+        }
+    }
+}
+
+fn copy_to_clipboard(value: &str) -> Result<()> {
+    let mut child = Command::new("pbcopy")
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(anyhow::Error::from)?;
+
+    let mut stdin = child.stdin.take().context("pbcopy stdin unavailable")?;
+    stdin.write_all(value.as_bytes())?;
+    drop(stdin);
+
+    let status = child.wait()?;
+    if !status.success() {
+        anyhow::bail!("pbcopy exited with {status}");
+    }
+    Ok(())
 }
 
 fn handle_search_key(app: &mut App, key: KeyEvent) -> bool {

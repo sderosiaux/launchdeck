@@ -173,11 +173,11 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     } else if app.pending_action.is_some() {
         "y/enter confirm | n/esc/left/backspace cancel"
     } else if app.mode == ViewMode::Logs {
-        "k/up older | j/down newer | PgUp/PgDn | g top | G bottom | tab/left/right stream | esc back"
+        "k/up older | j/down newer | PgUp/PgDn | g/G | tab stream | c copy path | esc back"
     } else if app.mode == ViewMode::Detail {
-        "up/down navigate detail | enter open stdout/stderr | l logs | s/x/R/e actions | esc back"
+        "up/down navigate detail | enter open stdout/stderr | c copy field | l logs | esc back"
     } else {
-        "q quit | ? help | / find | c clear | f source | F status | o sort | a apple | w warn | n new"
+        "q quit | ? help | / find | c copy | C clear | f source | F status | o sort | n new"
     };
     let text = vec![
         Line::from(keys),
@@ -477,7 +477,11 @@ fn draw_help(frame: &mut Frame<'_>) {
         ),
         help_line(
             "Filters",
-            "/ search | c clear | f source | F status | o sort | a apple | w warnings",
+            "/ search | C clear | f source | F status | o sort | a apple | w warnings",
+        ),
+        help_line(
+            "Copy",
+            "c copies the selected service, detail value, or log path",
         ),
         help_line(
             "Actions",
