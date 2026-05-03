@@ -16,6 +16,12 @@ Launchdeck is built for developer machines where background work is split betwee
 Install the latest macOS release binary:
 
 ```sh
+brew install sderosiaux/tap/launchdeck
+```
+
+Without Homebrew:
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/sderosiaux/launchdeck/main/scripts/install.sh | sh
 ```
 
@@ -26,6 +32,12 @@ BIN_DIR=/usr/local/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/sde
 ```
 
 Install from source with Cargo:
+
+```sh
+cargo install launchdeck
+```
+
+Install from the GitHub repository:
 
 ```sh
 cargo install --git https://github.com/sderosiaux/launchdeck

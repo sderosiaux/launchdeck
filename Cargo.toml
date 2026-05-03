@@ -1,8 +1,9 @@
 [package]
 name = "launchdeck"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Keyboard-first macOS TUI for launchd jobs and Homebrew services"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/sderosiaux/launchdeck"
 homepage = "https://github.com/sderosiaux/launchdeck"
 keywords = ["macos", "launchd", "homebrew", "tui", "services"]
