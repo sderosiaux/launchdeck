@@ -1,43 +1,130 @@
 # Launchdeck
 
-Launchdeck is a keyboard-first macOS TUI for managing `launchd` jobs and Homebrew services from one place.
+Launchdeck is a keyboard-first macOS TUI for inspecting and managing `launchd` jobs and Homebrew services from one place.
 
-The working idea is simple: most developer-facing macOS background processes are either raw `launchd` plists or Homebrew services backed by `launchd` plists. The tool should show both through one service overview, make common lifecycle actions safe, and keep the escape hatch to inspect the underlying plist and command output.
+It is built for the common macOS developer setup where background processes are split between raw plist files in `~/Library/LaunchAgents` and services managed through `brew services`.
 
-## Initial Scope
+![Launchdeck TUI](assets/launchdeck.gif)
 
-- Service overview across user agents, global agents, system daemons, and Homebrew services.
-- Real-time-ish status refresh using `launchctl`, `brew services --json`, and filesystem watches.
-- Start, stop, restart, enable, disable, bootstrap, and bootout actions with safety checks.
-- Structured service creation for common agent and daemon cases.
-- Integrated logs from service stdout/stderr files and macOS unified logging.
-- Smart search and filters by source, domain, status, ownership, safety level, and tags.
+## Features
 
-See [docs/SPEC.md](docs/SPEC.md) for the working product and technical spec.
+- Unified service list for `launchd` jobs and Homebrew services
+- Homebrew service discovery through `brew services list --json`
+- Runtime status from `launchctl`
+- Search, source filters, status filters, warnings-only filter, and sorting
+- Detail view with colored fields for service metadata, commands, plist paths, and health warnings
+- Log preview from configured `StandardOutPath` and `StandardErrorPath`
+- Background refresh so scrolling stays responsive
+- Guarded lifecycle actions with confirmation before any command runs
+- Safety blocks for system, admin-required, and vendor/runtime services
 
-## Run
+## Install
+
+Launchdeck currently builds from source.
+
+```sh
+git clone git@github.com:sderosiaux/launchdeck.git
+cd launchdeck
+cargo build --release
+```
+
+Run the release binary:
+
+```sh
+./target/release/launchdeck
+```
+
+Or run it directly during development:
 
 ```sh
 cargo run
 ```
 
-Useful non-interactive check:
+## Usage
+
+```sh
+launchdeck
+```
+
+Non-interactive inventory output:
+
+```sh
+launchdeck --list
+```
+
+When running from source:
 
 ```sh
 cargo run -- --list
 ```
 
-Optional fake user agent for local testing:
+## Keybindings
+
+| Key | Action |
+| --- | --- |
+| `j` / `Down` | Move down |
+| `k` / `Up` | Move up |
+| `PageDown` | Move down by a page |
+| `PageUp` | Move up by a page |
+| `/` | Search |
+| `c` | Clear search |
+| `f` | Cycle source filter |
+| `F` | Cycle status filter |
+| `o` | Cycle sort mode |
+| `a` | Toggle Apple/system services |
+| `w` | Toggle warnings-only view |
+| `r` | Refresh inventory |
+| `Enter` | Open service detail |
+| `l` | Open log preview |
+| `s` | Prepare start action |
+| `x` | Prepare stop action |
+| `R` | Prepare restart action |
+| `e` | Prepare enable/disable action |
+| `q` | Quit |
+
+Actions show the exact command before execution. Press `y` to confirm or `n`/`Esc` to cancel.
+
+## Safety
+
+Launchdeck is conservative by default.
+
+- Homebrew services use `brew services`.
+- User-owned launchd jobs use `launchctl`.
+- Services under `/System/Library` are inspect-only.
+- Admin-required services are blocked until sudo handling is implemented.
+- Vendor/runtime services are blocked unless they can be classified safely.
+
+## Test Fixture
+
+The repository includes a fake user agent plist for local testing:
 
 ```sh
 cp fixtures/com.sderosiaux.launchdeck.fake.plist ~/Library/LaunchAgents/
 cargo run -- --list | rg launchdeck.fake
 ```
 
-The fixture is not bootstrapped by default. It is just a plist file for discovery, detail view, log path, and action-planning tests.
+The fixture is not loaded or started by that command. It is only a plist file for testing discovery, detail rendering, log paths, and guarded actions.
 
-## Current MVP
+Remove it with:
 
-The first implementation discovers plist-backed `launchd` jobs, merges Homebrew services from `brew services list --json`, parses runtime state from `launchctl`, and renders a TUI overview with search, source filters, status filters, detail view, and log previews from configured stdout/stderr paths. Automatic refresh runs in the background so scrolling stays responsive.
+```sh
+rm ~/Library/LaunchAgents/com.sderosiaux.launchdeck.fake.plist
+```
 
-Lifecycle actions are guarded by a confirmation modal that shows the exact command before execution. Homebrew services use `brew services`; user-owned launchd jobs use `launchctl`. Read-only system services, admin-required services, and vendor/runtime services are blocked until the privilege/safety model is stronger.
+## Development
+
+```sh
+cargo fmt
+cargo check --message-format=short
+cargo run -- --list
+```
+
+## Requirements
+
+- macOS
+- Rust toolchain
+- Homebrew, optional but recommended for `brew services` support
+
+## Status
+
+Launchdeck is early software. The current build is useful for service inventory, inspection, filtering, log previews, and guarded actions. Service creation and sudo-backed admin actions are not implemented yet.

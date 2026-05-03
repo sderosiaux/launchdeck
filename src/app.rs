@@ -553,8 +553,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
         KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
         KeyCode::Char('n') => {
-            app.status_line =
-                "service creation is specced; form builder is the next milestone".to_string();
+            app.status_line = "service creation is not implemented yet".to_string();
         }
         _ => {}
     }
