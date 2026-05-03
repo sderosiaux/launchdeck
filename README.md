@@ -75,14 +75,43 @@ cargo run -- --list
 | `w` | Toggle warnings-only view |
 | `r` | Refresh inventory |
 | `Enter` | Open service detail |
-| `l` | Open log preview |
+| `l` | Open logs |
 | `s` | Prepare start action |
 | `x` | Prepare stop action |
 | `R` | Prepare restart action |
 | `e` | Prepare enable/disable action |
+| `n` | Create a user LaunchAgent |
 | `q` | Quit |
 
 Actions show the exact command before execution. Press `y` to confirm or `n`/`Esc` to cancel.
+
+### Logs
+
+| Key | Action |
+| --- | --- |
+| `j` / `Down` | Newer lines |
+| `k` / `Up` | Older lines |
+| `PageDown` | Newer page |
+| `PageUp` | Older page |
+| `g` | Top of loaded tail |
+| `G` | Bottom of loaded tail |
+| `Tab` / `Left` / `Right` | Switch stdout/stderr |
+| `Esc` / `Backspace` | Back to detail |
+
+The log view opens at the end of the selected stream and keeps a scrollback window from the latest 500 lines.
+
+### Create Form
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `Down` / `Right` / `Enter` | Next field |
+| `Shift+Tab` / `Up` / `Left` | Previous field |
+| `Backspace` | Delete, or move back if the field is empty |
+| `Space` | Toggle boolean fields, insert a space in text fields |
+| `Ctrl+S` / `F5` | Save plist |
+| `Esc` | Cancel |
+
+The create form currently writes user LaunchAgents only. It does not bootstrap or start the service.
 
 ## Safety
 

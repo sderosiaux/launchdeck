@@ -1,10 +1,11 @@
 use crate::app::{App, ViewMode};
+use crate::create::{CreateField, CreateServiceForm};
 use crate::model::{Service, ServiceStatus};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Margin};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -30,6 +31,9 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
 
     if app.pending_action.is_some() {
         draw_action(frame, app);
+    }
+    if app.create_form.is_some() {
+        draw_create_form(frame, app);
     }
 }
 
@@ -161,10 +165,14 @@ fn sync_viewport(app: &mut App, visible_rows: usize) {
 fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     let keys = if app.editing_search {
         "enter apply | esc cancel | backspace edit"
+    } else if app.create_form.is_some() {
+        "tab/down/right next | shift-tab/up/left prev | space toggle | ctrl+s/F5 save | esc cancel"
     } else if app.pending_action.is_some() {
-        "y confirm | n cancel | esc cancel"
+        "y/enter confirm | n/esc/left/backspace cancel"
+    } else if app.mode == ViewMode::Logs {
+        "k/up older | j/down newer | PgUp/PgDn | g top | G bottom | tab/left/right stream | esc back"
     } else {
-        "q quit | / find | c clear | f source | F status | o sort | a apple | w warn | PgUp/PgDn"
+        "q quit | / find | c clear | f source | F status | o sort | a apple | w warn | n new"
     };
     let text = vec![
         Line::from(keys),
@@ -383,51 +391,202 @@ fn draw_action(frame: &mut Frame<'_>, app: &App) {
     frame.render_widget(paragraph, area);
 }
 
+fn draw_create_form(frame: &mut Frame<'_>, app: &App) {
+    let area = centered_rect(frame.area(), 84, 72);
+    frame.render_widget(Clear, area);
+
+    let Some(form) = &app.create_form else {
+        return;
+    };
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(
+            "New user LaunchAgent",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(
+            "~/Library/LaunchAgents",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
+    lines.push(Line::from(""));
+
+    for field in CreateServiceForm::fields() {
+        lines.push(create_field_line(form, *field));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "Save writes a plist only. ",
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::raw("It does not bootstrap or start the service."),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Arguments ", Style::default().fg(Color::DarkGray)),
+        Span::raw("are split on whitespace in this first form version."),
+    ]));
+
+    let block = Block::default()
+        .title("Create service")
+        .borders(Borders::ALL);
+    let inner = block.inner(area).inner(Margin {
+        vertical: 1,
+        horizontal: 2,
+    });
+    frame.render_widget(block, area);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn create_field_line<'a>(form: &CreateServiceForm, field: CreateField) -> Line<'a> {
+    let selected = form.current_field() == field;
+    let marker = if selected { "> " } else { "  " };
+    let label_style = if selected {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD)
+    };
+    let value_style = match field {
+        CreateField::RunAtLoad | CreateField::KeepAlive => Style::default().fg(Color::Yellow),
+        CreateField::Command
+        | CreateField::WorkingDirectory
+        | CreateField::Stdout
+        | CreateField::Stderr => Style::default().fg(Color::Green),
+        CreateField::Label | CreateField::Arguments => Style::default().fg(Color::Cyan),
+    };
+    Line::from(vec![
+        Span::styled(format!("{marker}{:<18}", field.label()), label_style),
+        Span::styled(form.value_for(field), value_style),
+    ])
+}
+
 fn draw_logs(frame: &mut Frame<'_>, app: &App) {
-    let area = centered_rect(frame.area(), 82, 62);
+    let area = centered_rect(frame.area(), 86, 72);
     frame.render_widget(Clear, area);
 
     let Some(service) = selected_service(app) else {
         return;
     };
 
-    let mut items = Vec::new();
-    items.push(ListItem::new(format!("service: {}", service.display_name)));
-    items.push(ListItem::new(""));
-    add_log_preview(&mut items, "stdout", service.config.stdout_path.as_deref());
-    items.push(ListItem::new(""));
-    add_log_preview(&mut items, "stderr", service.config.stderr_path.as_deref());
-    items.push(ListItem::new(""));
-    items.push(ListItem::new("unified log command:"));
-    items.push(ListItem::new(format!(
-        "log stream --predicate 'process == \"{}\"' --style compact",
-        service.display_name
-    )));
+    let block = Block::default()
+        .title("Logs - esc closes")
+        .borders(Borders::ALL);
+    let inner = block.inner(area).inner(Margin {
+        vertical: 1,
+        horizontal: 2,
+    });
+    frame.render_widget(block, area);
 
-    let list = List::new(items).block(
-        Block::default()
-            .title("Logs - esc closes")
-            .borders(Borders::ALL),
-    );
-    frame.render_widget(list, area);
-}
-
-fn add_log_preview(items: &mut Vec<ListItem<'_>>, label: &str, path: Option<&str>) {
-    let Some(path) = path else {
-        items.push(ListItem::new(format!("{label}: -")));
-        return;
+    let path = match app.log_stream {
+        crate::app::LogStream::Stdout => service.config.stdout_path.as_deref(),
+        crate::app::LogStream::Stderr => service.config.stderr_path.as_deref(),
     };
 
-    items.push(ListItem::new(format!("{label}: {path}")));
-    match tail_file(path, 16) {
-        Ok(lines) if lines.is_empty() => items.push(ListItem::new("  empty")),
-        Ok(lines) => {
-            for line in lines {
-                items.push(ListItem::new(format!("  {line}")));
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                service.display_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            stream_tab("stdout", app.log_stream == crate::app::LogStream::Stdout),
+            Span::raw(" "),
+            stream_tab("stderr", app.log_stream == crate::app::LogStream::Stderr),
+        ]),
+        Line::from(""),
+        kv_line(
+            "path",
+            path.unwrap_or("-").to_string(),
+            Style::default().fg(Color::Green),
+        ),
+    ];
+
+    let visible_log_rows = usize::from(inner.height.saturating_sub(6)).max(1);
+    match path {
+        Some(path) => match tail_file(path, 500) {
+            Ok(file_lines) => {
+                let max_scroll = file_lines.len().saturating_sub(visible_log_rows);
+                let scroll = app.log_scroll.min(max_scroll);
+                let start = file_lines.len().saturating_sub(visible_log_rows + scroll);
+                let end = (start + visible_log_rows).min(file_lines.len());
+                lines.push(kv_line(
+                    "view",
+                    format!(
+                        "{}-{} of {}",
+                        start.saturating_add(1).min(file_lines.len()),
+                        end,
+                        file_lines.len()
+                    ),
+                    Style::default().fg(Color::Yellow),
+                ));
+                lines.push(Line::from(""));
+                if file_lines.is_empty() {
+                    lines.push(Line::from(Span::styled(
+                        "empty log file",
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                } else {
+                    for line in &file_lines[start..end] {
+                        lines.push(log_line(line));
+                    }
+                }
             }
+            Err(err) => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("cannot read: ", Style::default().fg(Color::Red)),
+                    Span::styled(err.to_string(), Style::default().fg(Color::Red)),
+                ]));
+            }
+        },
+        None => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "no log path configured for this stream",
+                Style::default().fg(Color::DarkGray),
+            )));
         }
-        Err(err) => items.push(ListItem::new(format!("  cannot read: {err}"))),
     }
+
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn stream_tab<'a>(label: &'static str, selected: bool) -> Span<'a> {
+    if selected {
+        Span::styled(
+            format!("[{label}]"),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(format!(" {label} "), Style::default().fg(Color::DarkGray))
+    }
+}
+
+fn log_line<'a>(line: &str) -> Line<'a> {
+    let lower = line.to_lowercase();
+    let style = if lower.contains("error") || lower.contains("failed") || lower.contains("panic") {
+        Style::default().fg(Color::Red)
+    } else if lower.contains("warn") {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    Line::from(Span::styled(line.to_string(), style))
 }
 
 fn tail_file(path: &str, max_lines: usize) -> std::io::Result<Vec<String>> {

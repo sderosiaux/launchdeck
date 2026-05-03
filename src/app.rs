@@ -1,4 +1,5 @@
 use crate::actions::{self, ActionKind, ActionPlan};
+use crate::create::{self, CreateServiceForm};
 use crate::discovery;
 use crate::model::{Inventory, Service, ServiceSource, ServiceStatus};
 use crate::ui;
@@ -22,6 +23,28 @@ pub enum ViewMode {
     Overview,
     Detail,
     Logs,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LogStream {
+    Stdout,
+    Stderr,
+}
+
+impl LogStream {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
+    }
+
+    fn toggle(self) -> Self {
+        match self {
+            Self::Stdout => Self::Stderr,
+            Self::Stderr => Self::Stdout,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,9 +141,12 @@ pub struct App {
     pub sort_mode: SortMode,
     pub show_apple: bool,
     pub warnings_only: bool,
+    pub log_stream: LogStream,
+    pub log_scroll: usize,
     pub editing_search: bool,
     pub mode: ViewMode,
     pub pending_action: Option<ActionPlan>,
+    pub create_form: Option<CreateServiceForm>,
     pub refresh_requested: bool,
     pub status_line: String,
     pub last_refresh: Instant,
@@ -140,9 +166,12 @@ impl App {
             sort_mode: SortMode::Name,
             show_apple: false,
             warnings_only: false,
+            log_stream: LogStream::Stdout,
+            log_scroll: 0,
             editing_search: false,
             mode: ViewMode::Overview,
             pending_action: None,
+            create_form: None,
             refresh_requested: false,
             status_line: "inventory ready; actions require confirmation".to_string(),
             last_refresh: Instant::now(),
@@ -331,6 +360,53 @@ impl App {
         }
     }
 
+    fn open_create_form(&mut self) {
+        self.create_form = Some(CreateServiceForm::new());
+        self.status_line = "new user agent: edit fields, ctrl+s or F5 to save".to_string();
+    }
+
+    fn cancel_create_form(&mut self) {
+        self.create_form = None;
+        self.status_line = "service creation cancelled".to_string();
+    }
+
+    fn save_create_form(&mut self) {
+        let Some(form) = &self.create_form else {
+            return;
+        };
+
+        match create::write_user_agent(form) {
+            Ok(path) => {
+                self.create_form = None;
+                self.refresh_requested = true;
+                self.status_line = format!("created {}", path.display());
+            }
+            Err(err) => {
+                self.status_line = format!("create failed: {err}");
+            }
+        }
+    }
+
+    fn open_logs(&mut self) {
+        self.mode = ViewMode::Logs;
+        self.log_scroll = 0;
+        self.status_line = "logs: k/up scroll older, j/down newer, tab switches stream".to_string();
+    }
+
+    fn scroll_logs_up(&mut self, amount: usize) {
+        self.log_scroll = self.log_scroll.saturating_add(amount);
+    }
+
+    fn scroll_logs_down(&mut self, amount: usize) {
+        self.log_scroll = self.log_scroll.saturating_sub(amount);
+    }
+
+    fn switch_log_stream(&mut self) {
+        self.log_stream = self.log_stream.toggle();
+        self.log_scroll = 0;
+        self.status_line = format!("showing {}", self.log_stream.label());
+    }
+
     pub fn counts(&self) -> (usize, usize, usize, usize) {
         let running = self
             .services
@@ -485,7 +561,11 @@ fn receive_refresh(refresh_rx: &Receiver<Inventory>) -> Option<Inventory> {
 }
 
 fn should_refresh(app: &App, refresh_in_progress: bool) -> bool {
-    if refresh_in_progress || app.editing_search || app.pending_action.is_some() {
+    if refresh_in_progress
+        || app.editing_search
+        || app.pending_action.is_some()
+        || app.create_form.is_some()
+    {
         return false;
     }
     app.refresh_requested || app.last_refresh.elapsed() >= REFRESH_INTERVAL
@@ -503,10 +583,17 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
 
+    if app.create_form.is_some() {
+        handle_create_key(app, key);
+        return false;
+    }
+
     if app.pending_action.is_some() {
         match key.code {
-            KeyCode::Char('y') => app.confirm_action(),
-            KeyCode::Char('n') | KeyCode::Esc => app.cancel_action(),
+            KeyCode::Char('y') | KeyCode::Enter => app.confirm_action(),
+            KeyCode::Char('n') | KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => {
+                app.cancel_action()
+            }
             _ => {}
         }
         return false;
@@ -514,6 +601,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
 
     if app.editing_search {
         return handle_search_key(app, key);
+    }
+
+    if app.mode == ViewMode::Logs {
+        return handle_logs_key(app, key);
     }
 
     match key.code {
@@ -544,26 +635,81 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         }
         KeyCode::Char('l') => {
             if app.selected_service().is_some() {
-                app.mode = ViewMode::Logs;
+                app.open_logs();
             }
         }
-        KeyCode::Esc => app.mode = ViewMode::Overview,
+        KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.mode = ViewMode::Overview,
         KeyCode::Char('s') => app.plan_action(ActionKind::Start),
         KeyCode::Char('x') => app.plan_action(ActionKind::Stop),
         KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
         KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
-        KeyCode::Char('n') => {
-            app.status_line = "service creation is not implemented yet".to_string();
-        }
+        KeyCode::Char('n') => app.open_create_form(),
         _ => {}
     }
 
     false
 }
 
+fn handle_create_key(app: &mut App, key: KeyEvent) {
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
+        app.save_create_form();
+        return;
+    }
+
+    match key.code {
+        KeyCode::Esc => app.cancel_create_form(),
+        KeyCode::F(5) => app.save_create_form(),
+        _ => {
+            let Some(form) = app.create_form.as_mut() else {
+                return;
+            };
+            match key.code {
+                KeyCode::Tab | KeyCode::Down | KeyCode::Right | KeyCode::Enter => form.next(),
+                KeyCode::BackTab | KeyCode::Up | KeyCode::Left => form.previous(),
+                KeyCode::Backspace => {
+                    let before = form.value_for(form.current_field());
+                    form.backspace();
+                    if before == form.value_for(form.current_field()) {
+                        form.previous();
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    if matches!(
+                        form.current_field(),
+                        create::CreateField::RunAtLoad | create::CreateField::KeepAlive
+                    ) {
+                        form.toggle();
+                    } else {
+                        form.insert(' ');
+                    }
+                }
+                KeyCode::Char(value) => form.insert(value),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn handle_logs_key(app: &mut App, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Char('q') => return true,
+        KeyCode::Esc | KeyCode::Backspace => app.mode = ViewMode::Detail,
+        KeyCode::Char('j') | KeyCode::Down => app.scroll_logs_down(1),
+        KeyCode::Char('k') | KeyCode::Up => app.scroll_logs_up(1),
+        KeyCode::PageDown => app.scroll_logs_down(10),
+        KeyCode::PageUp => app.scroll_logs_up(10),
+        KeyCode::Char('G') => app.log_scroll = 0,
+        KeyCode::Char('g') => app.log_scroll = usize::MAX / 2,
+        KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => app.switch_log_stream(),
+        KeyCode::Char('l') => app.switch_log_stream(),
+        _ => {}
+    }
+    false
+}
+
 fn handle_search_key(app: &mut App, key: KeyEvent) -> bool {
     match key.code {
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Left => {
             app.editing_search = false;
             app.status_line = "search cancelled".to_string();
         }
