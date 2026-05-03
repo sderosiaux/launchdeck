@@ -170,9 +170,9 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     } else if app.mode == ViewMode::Logs {
         "k/up older | j/down newer | PgUp/PgDn | g/G | tab stream | c copy path | esc back"
     } else if app.mode == ViewMode::Detail {
-        "up/down detail | enter logs | c copy | u RunAtLoad | s/x/R/e actions | esc back"
+        "up/down detail | enter logs | c copy | s/x/R/e/u | E edit | D delete | esc"
     } else {
-        "q quit | ? help | / find | c copy | C clear | u RunAtLoad | s/x/R/e actions | n new"
+        "q quit | ? help | / find | c copy | s/x/R/e/u | E edit | D delete | n new"
     };
     let text = vec![
         Line::from(keys),
@@ -485,6 +485,7 @@ fn draw_help(frame: &mut Frame<'_>) {
             "Actions",
             "s start | x stop | R restart/load | e enable/disable | u RunAtLoad",
         ),
+        help_line("Plist", "E edit plist | D delete plist after confirmation"),
         help_line(
             "Detail",
             "j/k or arrows move inside | enter opens selected stdout/stderr",

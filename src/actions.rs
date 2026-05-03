@@ -8,6 +8,8 @@ pub enum ActionKind {
     Restart,
     ToggleEnabled,
     ToggleRunAtLoad,
+    EditPlist,
+    Delete,
 }
 
 impl ActionKind {
@@ -18,6 +20,8 @@ impl ActionKind {
             Self::Restart => "restart",
             Self::ToggleEnabled => "toggle enabled",
             Self::ToggleRunAtLoad => "toggle RunAtLoad",
+            Self::EditPlist => "edit plist",
+            Self::Delete => "delete",
         }
     }
 }
@@ -134,6 +138,13 @@ fn plan_brew(service: &Service, kind: ActionKind) -> ActionPlan {
                 "Homebrew service plists are managed by brew services",
             );
         }
+        ActionKind::EditPlist | ActionKind::Delete => {
+            return blocked(
+                service,
+                kind,
+                "Homebrew service plists are managed by brew services",
+            );
+        }
         ActionKind::ToggleEnabled => {
             return blocked(
                 service,
@@ -231,6 +242,35 @@ fn plan_launchd(service: &Service, kind: ActionKind) -> ActionPlan {
                 ),
             ]
         }
+        ActionKind::EditPlist => {
+            let Some(path) = &service.plist_path else {
+                return blocked(service, kind, "service has no plist to edit");
+            };
+            vec![
+                "open".to_string(),
+                "-t".to_string(),
+                path.display().to_string(),
+            ]
+        }
+        ActionKind::Delete => {
+            let Some(path) = &service.plist_path else {
+                return blocked(service, kind, "service has no plist to delete");
+            };
+            let path_display = path.display().to_string();
+            if service.loaded == Some(false) {
+                vec!["rm".to_string(), "--".to_string(), path_display]
+            } else {
+                let path = shell_quote(&path_display);
+                vec![
+                    "/bin/sh".to_string(),
+                    "-lc".to_string(),
+                    format!(
+                        "launchctl bootout {} >/dev/null 2>&1 && rm -- {path}",
+                        shell_quote(&target),
+                    ),
+                ]
+            }
+        }
     };
 
     ActionPlan {
@@ -261,6 +301,16 @@ fn warning_for_launchd(service: &Service, kind: ActionKind) -> String {
             "This will set RunAtLoad to false in the plist.".to_string()
         }
         ActionKind::ToggleRunAtLoad => "This will set RunAtLoad to true in the plist.".to_string(),
+        ActionKind::EditPlist => {
+            "This opens the plist in the default macOS text editor.".to_string()
+        }
+        ActionKind::Delete if service.loaded == Some(false) => {
+            "This permanently removes the plist file.".to_string()
+        }
+        ActionKind::Delete => {
+            "This tries to unload the launchd job, then permanently removes the plist file."
+                .to_string()
+        }
     }
 }
 
@@ -352,6 +402,43 @@ mod tests {
         assert_eq!(
             plan.blocked_reason.as_deref(),
             Some("Homebrew service plists are managed by brew services")
+        );
+    }
+
+    #[test]
+    fn edit_plist_opens_launchd_plist_in_text_editor() {
+        let plan = plan(
+            &service(ServiceSource::Launchd, Some(false)),
+            ActionKind::EditPlist,
+        );
+
+        assert!(!plan.is_blocked());
+        assert_eq!(
+            plan.command,
+            vec![
+                "open".to_string(),
+                "-t".to_string(),
+                "/tmp/com.example.demo.plist".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn delete_loaded_service_unloads_before_removing_plist() {
+        let plan = plan(
+            &service(ServiceSource::Launchd, Some(false)),
+            ActionKind::Delete,
+        );
+
+        assert!(!plan.is_blocked());
+        assert_eq!(plan.command.first().map(String::as_str), Some("/bin/sh"));
+        assert!(plan.command.get(2).is_some_and(|command| {
+            command.contains("launchctl bootout 'gui/501/com.example.demo'")
+        }));
+        assert!(
+            plan.command
+                .get(2)
+                .is_some_and(|command| command.contains("rm -- '/tmp/com.example.demo.plist'"))
         );
     }
 }

@@ -829,6 +829,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
         KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
         KeyCode::Char('u') => app.plan_action(ActionKind::ToggleRunAtLoad),
+        KeyCode::Char('E') => app.plan_action(ActionKind::EditPlist),
+        KeyCode::Char('D') => app.plan_action(ActionKind::Delete),
         KeyCode::Char('n') => app.open_create_form(),
         _ => {}
     }
@@ -854,6 +856,8 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
         KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
         KeyCode::Char('u') => app.plan_action(ActionKind::ToggleRunAtLoad),
+        KeyCode::Char('E') => app.plan_action(ActionKind::EditPlist),
+        KeyCode::Char('D') => app.plan_action(ActionKind::Delete),
         _ => {}
     }
     false

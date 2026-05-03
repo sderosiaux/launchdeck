@@ -84,6 +84,8 @@ cargo run -- --list
 | `R` | Prepare restart/load action |
 | `e` | Prepare enable/disable action |
 | `u` | Prepare RunAtLoad toggle action |
+| `E` | Prepare edit plist action |
+| `D` | Prepare delete plist action |
 | `n` | Create a user LaunchAgent |
 | `q` | Quit |
 
@@ -103,6 +105,8 @@ Actions show the exact command before execution. Press `y` to confirm or `n`/`Es
 | `Enter` | Open the selected stdout/stderr log row |
 | `l` | Open stdout logs |
 | `u` | Prepare RunAtLoad toggle action |
+| `E` | Prepare edit plist action |
+| `D` | Prepare delete plist action |
 | `Esc` / `Backspace` / `Left` | Back to overview |
 
 ### Logs
