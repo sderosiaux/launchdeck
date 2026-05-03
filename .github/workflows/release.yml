@@ -36,7 +36,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/launchdeck" "dist/${package}/"
           cp README.md "dist/${package}/"
           tar -C dist -czf "dist/${package}.tar.gz" "${package}"
-          shasum -a 256 "dist/${package}.tar.gz" > "dist/${package}.sha256"
+          (cd dist && shasum -a 256 "${package}.tar.gz" > "${package}.sha256")
       - uses: actions/upload-artifact@v4
         with:
           name: launchdeck-${{ matrix.target }}
