@@ -103,7 +103,7 @@ Actions show the exact command before execution. Press `y` to confirm or `n`/`Es
 | `g` | First detail row |
 | `G` | Last detail row |
 | `c` | Copy selected field value |
-| `Enter` | Open the selected stdout/stderr log row |
+| `Enter` | Act on the selected row: status, plist, RunAtLoad, stdout, or stderr |
 | `l` | Open stdout logs |
 | `u` | Prepare RunAtLoad toggle action |
 | `E` | Prepare edit plist action |

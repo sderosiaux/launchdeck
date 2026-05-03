@@ -162,7 +162,7 @@ fn sync_viewport(app: &mut App, visible_rows: usize) {
 
 fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     let keys = if app.editing_search {
-        "enter apply | esc cancel | backspace edit"
+        "type filter | arrows/PgUp/PgDn move | enter detail | C clear | esc done"
     } else if app.create_form.is_some() {
         "tab/down/right next | shift-tab/up/left prev | space toggle | ctrl+s/F5 save | esc cancel"
     } else if app.pending_action.is_some() {
@@ -170,7 +170,7 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     } else if app.mode == ViewMode::Logs {
         "k/up older | j/down newer | PgUp/PgDn | g/G | tab stream | c copy path | esc back"
     } else if app.mode == ViewMode::Detail {
-        "up/down detail | enter logs | c copy | s/x/R/e/u | E edit | D delete | esc"
+        "up/down detail | enter acts on field | c copy | s/x/R/e/u | E edit | D delete | esc"
     } else {
         "type search | arrows move | enter detail | Y copy | S/X/R/T/U | E edit | D delete"
     };
@@ -371,7 +371,7 @@ fn selectable_kv_line<'a>(
 }
 
 fn draw_action(frame: &mut Frame<'_>, app: &App) {
-    let area = centered_rect(frame.area(), 74, 34);
+    let area = centered_rect(frame.area(), 78, 42);
     frame.render_widget(Clear, area);
 
     let Some(plan) = &app.pending_action else {
@@ -383,25 +383,84 @@ fn draw_action(frame: &mut Frame<'_>, app: &App) {
     } else {
         "Confirm Action"
     };
-    let mut lines = Vec::new();
-    lines.push(Line::from(format!("action: {}", plan.kind.label())));
-    lines.push(Line::from(format!("service: {}", plan.service_name)));
-    lines.push(Line::from(format!("command: {}", plan.command_display())));
-    lines.push(Line::from(""));
-    lines.push(Line::from(format!("note: {}", plan.warning)));
+    let title_style = if plan.is_blocked() {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    };
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(title, title_style),
+            Span::raw("  "),
+            Span::styled(plan.kind.label(), Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(""),
+        kv_line(
+            "action",
+            plan.kind.label().to_string(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        kv_line(
+            "service",
+            plan.service_name.clone(),
+            Style::default().fg(Color::Blue),
+        ),
+        kv_line(
+            "command",
+            plan.command_display(),
+            Style::default().fg(Color::Green),
+        ),
+        Line::from(""),
+        kv_line(
+            "note",
+            plan.warning.clone(),
+            Style::default().fg(Color::Yellow),
+        ),
+    ];
     if let Some(reason) = &plan.blocked_reason {
-        lines.push(Line::from(format!("blocked: {reason}")));
         lines.push(Line::from(""));
-        lines.push(Line::from("press n or esc to close"));
+        lines.push(kv_line(
+            "blocked",
+            reason.clone(),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("n", Style::default().fg(Color::Cyan)),
+            Span::raw(" / "),
+            Span::styled("esc", Style::default().fg(Color::Cyan)),
+            Span::raw(" close"),
+        ]));
     } else {
         lines.push(Line::from(""));
-        lines.push(Line::from("press y to run, n or esc to cancel"));
+        lines.push(Line::from(vec![
+            Span::styled("y", Style::default().fg(Color::Green)),
+            Span::raw(" / "),
+            Span::styled("enter", Style::default().fg(Color::Green)),
+            Span::raw(" run   "),
+            Span::styled("n", Style::default().fg(Color::Cyan)),
+            Span::raw(" / "),
+            Span::styled("esc", Style::default().fg(Color::Cyan)),
+            Span::raw(" cancel"),
+        ]));
     }
 
-    let paragraph = Paragraph::new(lines)
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
+    let block = Block::default()
+        .title(title)
+        .title_style(title_style)
+        .borders(Borders::ALL);
+    let inner = block.inner(area).inner(Margin {
+        vertical: 1,
+        horizontal: 2,
+    });
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(block, area);
+    frame.render_widget(paragraph, inner);
 }
 
 fn draw_create_form(frame: &mut Frame<'_>, app: &App) {
@@ -488,7 +547,7 @@ fn draw_help(frame: &mut Frame<'_>) {
         help_line("Plist", "E edit plist | D delete plist after confirmation"),
         help_line(
             "Detail",
-            "j/k or arrows move inside | enter opens selected stdout/stderr",
+            "j/k or arrows move inside | enter acts on status, plist, RunAtLoad, logs",
         ),
         help_line(
             "Logs",

@@ -69,14 +69,6 @@ impl DetailItem {
             Self::Health => "health",
         }
     }
-
-    fn log_stream(self) -> Option<LogStream> {
-        match self {
-            Self::Stdout => Some(LogStream::Stdout),
-            Self::Stderr => Some(LogStream::Stderr),
-            _ => None,
-        }
-    }
 }
 
 const DETAIL_ITEMS: [DetailItem; 17] = [
@@ -544,11 +536,16 @@ impl App {
     }
 
     fn open_selected_detail_item(&mut self) {
-        let Some(stream) = self.selected_detail_item().log_stream() else {
-            self.status_line = format!("{} selected", self.selected_detail_item().label());
-            return;
-        };
-        self.open_logs(stream);
+        match self.selected_detail_item() {
+            DetailItem::Status => self.plan_action(status_detail_action(self.selected_service())),
+            DetailItem::Stdout => self.open_logs(LogStream::Stdout),
+            DetailItem::Stderr => self.open_logs(LogStream::Stderr),
+            DetailItem::RunAtLoad => self.plan_action(ActionKind::ToggleRunAtLoad),
+            DetailItem::Plist => self.plan_action(ActionKind::EditPlist),
+            item => {
+                self.status_line = format!("{} selected", item.label());
+            }
+        }
     }
 
     fn save_create_form(&mut self) {
@@ -631,6 +628,16 @@ fn matches_status(service: &Service, filter: StatusFilter) -> bool {
             service.status,
             ServiceStatus::Stopped | ServiceStatus::Unloaded | ServiceStatus::Disabled
         ),
+    }
+}
+
+fn status_detail_action(service: Option<&Service>) -> ActionKind {
+    match service.map(|service| &service.status) {
+        Some(ServiceStatus::Running) => ActionKind::Stop,
+        Some(ServiceStatus::Stopped | ServiceStatus::Unloaded) => ActionKind::Start,
+        Some(ServiceStatus::Failed) => ActionKind::Restart,
+        Some(ServiceStatus::Disabled) => ActionKind::ToggleEnabled,
+        Some(ServiceStatus::Unknown) | None => ActionKind::Restart,
     }
 }
 
@@ -1038,8 +1045,19 @@ fn handle_search_key(app: &mut App, key: KeyEvent) -> bool {
         }
         KeyCode::Enter => {
             app.editing_search = false;
-            app.apply_filter();
-            app.status_line = format!("{} services match", app.filtered.len());
+            if app.selected_service().is_some() {
+                app.open_detail();
+            } else {
+                app.status_line = format!("{} services match", app.filtered.len());
+            }
+        }
+        KeyCode::Down => app.move_down(),
+        KeyCode::Up => app.move_up(),
+        KeyCode::PageDown => app.page_down(),
+        KeyCode::PageUp => app.page_up(),
+        KeyCode::Char('C') => {
+            app.editing_search = false;
+            app.clear_search();
         }
         KeyCode::Backspace => {
             app.search.pop();
