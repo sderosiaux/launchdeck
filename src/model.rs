@@ -107,13 +107,13 @@ impl CalendarSchedule {
         }
 
         if let Some(month) = self.month {
-            parts.push(format!("month {month}"));
+            parts.push(format!("mo{month}"));
         }
         if let Some(day) = self.day {
-            parts.push(format!("day {day}"));
+            parts.push(format!("d{day}"));
         }
         if let Some(weekday) = self.weekday {
-            parts.push(format!("weekday {weekday}"));
+            parts.push(weekday_name(weekday).to_string());
         }
         match (self.hour, self.minute) {
             (Some(hour), Some(minute)) => parts.push(format!("{hour:02}:{minute:02}")),
@@ -169,7 +169,7 @@ impl LaunchConfig {
     pub fn schedule_summary(&self) -> String {
         let mut schedules = Vec::new();
         if let Some(interval) = self.start_interval {
-            schedules.push(format!("every {interval}s"));
+            schedules.push(format_interval(interval));
         }
         schedules.extend(
             self.start_calendar_intervals
@@ -182,6 +182,35 @@ impl LaunchConfig {
         } else {
             schedules.join(", ")
         }
+    }
+}
+
+fn format_interval(seconds: u64) -> String {
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
+
+    if seconds >= DAY && seconds.is_multiple_of(DAY) {
+        format!("{}d", seconds / DAY)
+    } else if seconds >= HOUR && seconds.is_multiple_of(HOUR) {
+        format!("{}h", seconds / HOUR)
+    } else if seconds >= MINUTE && seconds.is_multiple_of(MINUTE) {
+        format!("{}min", seconds / MINUTE)
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+fn weekday_name(weekday: u64) -> &'static str {
+    match weekday {
+        0 | 7 => "Sun",
+        1 => "Mon",
+        2 => "Tue",
+        3 => "Wed",
+        4 => "Thu",
+        5 => "Fri",
+        6 => "Sat",
+        _ => "?",
     }
 }
 
@@ -251,6 +280,27 @@ mod tests {
     }
 
     #[test]
+    fn calendar_schedule_describes_calendar_dates_compactly() {
+        let schedule = CalendarSchedule {
+            minute: Some(30),
+            hour: Some(9),
+            day: None,
+            weekday: Some(1),
+            month: None,
+        };
+
+        assert_eq!(schedule.describe(), "Mon 09:30");
+    }
+
+    #[test]
+    fn start_interval_uses_short_units() {
+        assert_eq!(format_interval(300), "5min");
+        assert_eq!(format_interval(3600), "1h");
+        assert_eq!(format_interval(86_400), "1d");
+        assert_eq!(format_interval(45), "45s");
+    }
+
+    #[test]
     fn launch_config_summarizes_interval_and_calendar_entries() {
         let config = LaunchConfig {
             program: None,
@@ -279,6 +329,6 @@ mod tests {
             ],
         };
 
-        assert_eq!(config.schedule_summary(), "every 3600s, 00:00, 12:30");
+        assert_eq!(config.schedule_summary(), "1h, 00:00, 12:30");
     }
 }
