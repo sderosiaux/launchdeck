@@ -126,6 +126,7 @@ The log view opens at the end of the selected stream and keeps a scrollback wind
 | `Esc` | Cancel |
 
 The create form currently writes user LaunchAgents only. It does not bootstrap or start the service.
+Arguments accept shell-style quotes, so values such as `--name "hello world"` are preserved as one argument.
 
 ## Safety
 
@@ -170,4 +171,4 @@ cargo run -- --list
 
 ## Status
 
-Launchdeck is early software. The current build is useful for service inventory, inspection, filtering, log previews, and guarded actions. Service creation and sudo-backed admin actions are not implemented yet.
+Launchdeck is early software. The current build is useful for service inventory, inspection, filtering, navigable log files, guarded actions, and creating user LaunchAgents. Bootstrap/start after creation and sudo-backed admin actions are not implemented yet.

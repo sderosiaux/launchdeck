@@ -166,7 +166,7 @@ pub fn write_user_agent(form: &CreateServiceForm) -> Result<PathBuf> {
     dict.insert("Label".into(), Value::String(form.label.trim().to_string()));
     dict.insert(
         "ProgramArguments".into(),
-        Value::Array(program_arguments(form)),
+        Value::Array(program_arguments(form)?),
     );
     dict.insert("RunAtLoad".into(), Value::Boolean(form.run_at_load));
     dict.insert("KeepAlive".into(), Value::Boolean(form.keep_alive));
@@ -210,6 +210,7 @@ fn validate(form: &CreateServiceForm) -> Result<()> {
     validate_parent("working directory", &form.working_directory, true)?;
     validate_parent("stdout path", &form.stdout_path, false)?;
     validate_parent("stderr path", &form.stderr_path, false)?;
+    parse_argument_tail(&form.arguments)?;
 
     Ok(())
 }
@@ -237,14 +238,25 @@ fn validate_parent(label: &str, raw_path: &str, path_is_directory: bool) -> Resu
     Ok(())
 }
 
-fn program_arguments(form: &CreateServiceForm) -> Vec<Value> {
-    let mut args = vec![Value::String(form.command.trim().to_string())];
-    args.extend(
-        form.arguments
-            .split_whitespace()
-            .map(|arg| Value::String(arg.to_string())),
-    );
-    args
+fn program_arguments(form: &CreateServiceForm) -> Result<Vec<Value>> {
+    Ok(program_argument_strings(form)?
+        .into_iter()
+        .map(Value::String)
+        .collect())
+}
+
+fn program_argument_strings(form: &CreateServiceForm) -> Result<Vec<String>> {
+    let mut args = vec![form.command.trim().to_string()];
+    args.extend(parse_argument_tail(&form.arguments)?);
+    Ok(args)
+}
+
+fn parse_argument_tail(raw_arguments: &str) -> Result<Vec<String>> {
+    if raw_arguments.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    shell_words::split(raw_arguments).context("arguments must use valid shell-style quoting")
 }
 
 fn insert_optional_string(dict: &mut Dictionary, key: &str, value: &str) {
@@ -287,5 +299,45 @@ fn bool_marker(value: bool) -> String {
         "yes".to_string()
     } else {
         "no".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn form_with_arguments(arguments: &str) -> CreateServiceForm {
+        let mut form = CreateServiceForm::new();
+        form.label = "com.sderosiaux.launchdeck.test".to_string();
+        form.command = "/bin/echo".to_string();
+        form.arguments = arguments.to_string();
+        form
+    }
+
+    #[test]
+    fn program_arguments_preserve_shell_quoted_values() {
+        let form = form_with_arguments(r#"--name "hello world" 'single quoted' plain"#);
+
+        let args = program_argument_strings(&form).expect("arguments parse");
+
+        assert_eq!(
+            args,
+            vec![
+                "/bin/echo",
+                "--name",
+                "hello world",
+                "single quoted",
+                "plain"
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_argument_quoting_is_rejected() {
+        let form = form_with_arguments(r#""unterminated"#);
+
+        let err = validate(&form).expect_err("unterminated quotes should fail");
+
+        assert!(err.to_string().contains("shell-style quoting"));
     }
 }

@@ -441,7 +441,7 @@ fn draw_create_form(frame: &mut Frame<'_>, app: &App) {
     ]));
     lines.push(Line::from(vec![
         Span::styled("Arguments ", Style::default().fg(Color::DarkGray)),
-        Span::raw("are split on whitespace in this first form version."),
+        Span::raw(r#"accept shell-style quotes, for example --name "hello world"."#),
     ]));
 
     let block = Block::default()
