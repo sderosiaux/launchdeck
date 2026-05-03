@@ -49,7 +49,13 @@ launchdeck
 Print inventory without opening the TUI:
 
 ```sh
-launchdeck --list
+launchdeck list
+```
+
+`launchdeck list` uses the same default visibility as the TUI and hides Apple/system services. Print the full discovered inventory with:
+
+```sh
+launchdeck list --all
 ```
 
 ## Features
