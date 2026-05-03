@@ -337,6 +337,23 @@ impl App {
         self.status_line = "search cleared".to_string();
     }
 
+    fn open_search(&mut self) {
+        self.editing_search = true;
+        self.mode = ViewMode::Overview;
+        self.status_line = "search mode: type query, enter to apply, esc to cancel".to_string();
+    }
+
+    fn start_quick_search(&mut self, value: char) {
+        self.search.clear();
+        self.search.push(value);
+        self.editing_search = true;
+        self.mode = ViewMode::Overview;
+        self.selected = 0;
+        self.viewport_start = 0;
+        self.apply_filter();
+        self.status_line = "quick search: keep typing, enter to apply, esc to cancel".to_string();
+    }
+
     fn copy_selected_value(&mut self) {
         let Some((label, value)) = self.copy_target() else {
             self.status_line = "nothing selected to copy".to_string();
@@ -801,37 +818,38 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
 
     match key.code {
         KeyCode::Char('q') => return true,
-        KeyCode::Char('/') => {
-            app.editing_search = true;
-            app.mode = ViewMode::Overview;
-            app.status_line = "search mode: type query, enter to apply, esc to cancel".to_string();
-        }
-        KeyCode::Char('c') => app.copy_selected_value(),
+        KeyCode::Char('/') => app.open_search(),
         KeyCode::Char('C') => app.clear_search(),
-        KeyCode::Char('f') => app.cycle_source_filter(),
         KeyCode::Char('F') => app.cycle_status_filter(),
-        KeyCode::Char('o') => app.cycle_sort(),
-        KeyCode::Char('a') => app.toggle_apple(),
-        KeyCode::Char('w') => app.toggle_warnings_only(),
-        KeyCode::Char('r') => {
+        KeyCode::Char('P') => app.cycle_source_filter(),
+        KeyCode::Char('O') => app.cycle_sort(),
+        KeyCode::Char('A') => app.toggle_apple(),
+        KeyCode::Char('W') => app.toggle_warnings_only(),
+        KeyCode::Char('Y') => app.copy_selected_value(),
+        KeyCode::Char('L') if app.selected_service().is_some() => app.open_logs(LogStream::Stdout),
+        KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
+        KeyCode::Char('S') => app.plan_action(ActionKind::Start),
+        KeyCode::Char('X') => app.plan_action(ActionKind::Stop),
+        KeyCode::Char('T') => app.plan_action(ActionKind::ToggleEnabled),
+        KeyCode::Char('U') => app.plan_action(ActionKind::ToggleRunAtLoad),
+        KeyCode::Char('E') => app.plan_action(ActionKind::EditPlist),
+        KeyCode::Char('D') => app.plan_action(ActionKind::Delete),
+        KeyCode::Char('N') => app.open_create_form(),
+        KeyCode::F(5) => {
             app.refresh_requested = true;
             app.status_line = "refresh requested".to_string();
         }
-        KeyCode::Char('j') | KeyCode::Down => app.move_down(),
-        KeyCode::Char('k') | KeyCode::Up => app.move_up(),
+        KeyCode::Char('r') if has_command_modifier(key) => {
+            app.refresh_requested = true;
+            app.status_line = "refresh requested".to_string();
+        }
+        KeyCode::Down => app.move_down(),
+        KeyCode::Up => app.move_up(),
         KeyCode::PageDown => app.page_down(),
         KeyCode::PageUp => app.page_up(),
         KeyCode::Enter if app.selected_service().is_some() => app.open_detail(),
-        KeyCode::Char('l') if app.selected_service().is_some() => app.open_logs(LogStream::Stdout),
         KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.mode = ViewMode::Overview,
-        KeyCode::Char('s') => app.plan_action(ActionKind::Start),
-        KeyCode::Char('x') => app.plan_action(ActionKind::Stop),
-        KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
-        KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
-        KeyCode::Char('u') => app.plan_action(ActionKind::ToggleRunAtLoad),
-        KeyCode::Char('E') => app.plan_action(ActionKind::EditPlist),
-        KeyCode::Char('D') => app.plan_action(ActionKind::Delete),
-        KeyCode::Char('n') => app.open_create_form(),
+        KeyCode::Char(value) if is_quick_search_key(key) => app.start_quick_search(value),
         _ => {}
     }
 
@@ -861,6 +879,17 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) -> bool {
         _ => {}
     }
     false
+}
+
+fn is_quick_search_key(key: KeyEvent) -> bool {
+    let KeyCode::Char(value) = key.code else {
+        return false;
+    };
+    !value.is_control() && !has_command_modifier(key)
+}
+
+fn has_command_modifier(key: KeyEvent) -> bool {
+    key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT)
 }
 
 fn handle_create_key(app: &mut App, key: KeyEvent) {

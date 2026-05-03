@@ -63,30 +63,31 @@ cargo run -- --list
 
 | Key | Action |
 | --- | --- |
-| `j` / `Down` | Move down |
-| `k` / `Up` | Move up |
+| Type text | Start quick search |
+| `Down` | Move down |
+| `Up` | Move up |
 | `PageDown` | Move down by a page |
 | `PageUp` | Move up by a page |
 | `?` / `F1` | Open keyboard help |
 | `/` | Search |
-| `c` | Copy selected service name |
+| `Y` | Copy selected service name |
 | `C` | Clear search |
-| `f` | Cycle source filter |
+| `P` | Cycle source filter |
 | `F` | Cycle status filter |
-| `o` | Cycle sort mode |
-| `a` | Toggle Apple/system services |
-| `w` | Toggle warnings-only view |
-| `r` | Refresh inventory |
+| `O` | Cycle sort mode |
+| `A` | Toggle Apple/system services |
+| `W` | Toggle warnings-only view |
+| `F5` / `Ctrl-r` | Refresh inventory |
 | `Enter` | Open service detail |
-| `l` | Open logs |
-| `s` | Prepare start action |
-| `x` | Prepare stop action |
+| `L` | Open logs |
+| `S` | Prepare start action |
+| `X` | Prepare stop action |
 | `R` | Prepare restart/load action |
-| `e` | Prepare enable/disable action |
-| `u` | Prepare RunAtLoad toggle action |
+| `T` | Prepare enable/disable action |
+| `U` | Prepare RunAtLoad toggle action |
 | `E` | Prepare edit plist action |
 | `D` | Prepare delete plist action |
-| `n` | Create a user LaunchAgent |
+| `N` | Create a user LaunchAgent |
 | `q` | Quit |
 
 Actions show the exact command before execution. Press `y` to confirm or `n`/`Esc` to cancel.

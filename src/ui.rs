@@ -172,7 +172,7 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     } else if app.mode == ViewMode::Detail {
         "up/down detail | enter logs | c copy | s/x/R/e/u | E edit | D delete | esc"
     } else {
-        "q quit | ? help | / find | c copy | s/x/R/e/u | E edit | D delete | n new"
+        "type search | arrows move | enter detail | Y copy | S/X/R/T/U | E edit | D delete"
     };
     let text = vec![
         Line::from(keys),
@@ -471,19 +471,19 @@ fn draw_help(frame: &mut Frame<'_>) {
         help_line("Global", "q quit | ?/F1 help | esc/backspace/left back"),
         help_line(
             "Overview",
-            "j/k or arrows move | PgUp/PgDn page | enter detail",
+            "type to search | arrows move | PgUp/PgDn page | enter detail",
         ),
         help_line(
             "Filters",
-            "/ search | C clear | f source | F status | o sort | a apple | w warnings",
+            "/ search | C clear | P source | F status | O sort | A apple | W warnings",
         ),
         help_line(
             "Copy",
-            "c copies the selected service, detail value, or log path",
+            "Y copies the selected service; c copies detail values and log paths",
         ),
         help_line(
             "Actions",
-            "s start | x stop | R restart/load | e enable/disable | u RunAtLoad",
+            "S start | X stop | R restart/load | T enable/disable | U RunAtLoad",
         ),
         help_line("Plist", "E edit plist | D delete plist after confirmation"),
         help_line(
