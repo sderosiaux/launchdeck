@@ -2,6 +2,11 @@
 name = "launchdeck"
 version = "0.1.0"
 edition = "2024"
+description = "Keyboard-first macOS TUI for launchd jobs and Homebrew services"
+repository = "https://github.com/sderosiaux/launchdeck"
+homepage = "https://github.com/sderosiaux/launchdeck"
+keywords = ["macos", "launchd", "homebrew", "tui", "services"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0.102"
