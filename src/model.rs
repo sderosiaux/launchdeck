@@ -85,6 +85,52 @@ impl fmt::Display for SafetyLevel {
 }
 
 #[derive(Clone, Debug)]
+pub struct CalendarSchedule {
+    pub minute: Option<u64>,
+    pub hour: Option<u64>,
+    pub day: Option<u64>,
+    pub weekday: Option<u64>,
+    pub month: Option<u64>,
+}
+
+impl CalendarSchedule {
+    pub fn describe(&self) -> String {
+        let mut parts = Vec::new();
+
+        if self.month.is_none() && self.day.is_none() && self.weekday.is_none() {
+            match (self.hour, self.minute) {
+                (Some(hour), Some(minute)) => return format!("{hour:02}:{minute:02}"),
+                (Some(hour), None) => return format!("{hour:02}:*"),
+                (None, Some(minute)) => return format!("*:{minute:02}"),
+                (None, None) => return "calendar".to_string(),
+            }
+        }
+
+        if let Some(month) = self.month {
+            parts.push(format!("month {month}"));
+        }
+        if let Some(day) = self.day {
+            parts.push(format!("day {day}"));
+        }
+        if let Some(weekday) = self.weekday {
+            parts.push(format!("weekday {weekday}"));
+        }
+        match (self.hour, self.minute) {
+            (Some(hour), Some(minute)) => parts.push(format!("{hour:02}:{minute:02}")),
+            (Some(hour), None) => parts.push(format!("{hour:02}:*")),
+            (None, Some(minute)) => parts.push(format!("*:{minute:02}")),
+            (None, None) => {}
+        }
+
+        if parts.is_empty() {
+            "calendar".to_string()
+        } else {
+            parts.join(" ")
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct LaunchConfig {
     pub program: Option<String>,
     pub arguments: Vec<String>,
@@ -94,6 +140,7 @@ pub struct LaunchConfig {
     pub run_at_load: Option<bool>,
     pub keep_alive: Option<String>,
     pub start_interval: Option<u64>,
+    pub start_calendar_intervals: Vec<CalendarSchedule>,
 }
 
 impl LaunchConfig {
@@ -107,6 +154,7 @@ impl LaunchConfig {
             run_at_load: None,
             keep_alive: None,
             start_interval: None,
+            start_calendar_intervals: Vec::new(),
         }
     }
 
@@ -115,6 +163,24 @@ impl LaunchConfig {
             self.arguments.join(" ")
         } else {
             self.program.clone().unwrap_or_else(|| "-".to_string())
+        }
+    }
+
+    pub fn schedule_summary(&self) -> String {
+        let mut schedules = Vec::new();
+        if let Some(interval) = self.start_interval {
+            schedules.push(format!("every {interval}s"));
+        }
+        schedules.extend(
+            self.start_calendar_intervals
+                .iter()
+                .map(CalendarSchedule::describe),
+        );
+
+        if schedules.is_empty() {
+            "-".to_string()
+        } else {
+            schedules.join(", ")
         }
     }
 }
@@ -165,4 +231,54 @@ impl Service {
 pub struct Inventory {
     pub services: Vec<Service>,
     pub warnings: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn calendar_schedule_describes_plain_times() {
+        let schedule = CalendarSchedule {
+            minute: Some(0),
+            hour: Some(6),
+            day: None,
+            weekday: None,
+            month: None,
+        };
+
+        assert_eq!(schedule.describe(), "06:00");
+    }
+
+    #[test]
+    fn launch_config_summarizes_interval_and_calendar_entries() {
+        let config = LaunchConfig {
+            program: None,
+            arguments: Vec::new(),
+            working_directory: None,
+            stdout_path: None,
+            stderr_path: None,
+            run_at_load: None,
+            keep_alive: None,
+            start_interval: Some(3600),
+            start_calendar_intervals: vec![
+                CalendarSchedule {
+                    minute: Some(0),
+                    hour: Some(0),
+                    day: None,
+                    weekday: None,
+                    month: None,
+                },
+                CalendarSchedule {
+                    minute: Some(30),
+                    hour: Some(12),
+                    day: None,
+                    weekday: None,
+                    month: None,
+                },
+            ],
+        };
+
+        assert_eq!(config.schedule_summary(), "every 3600s, 00:00, 12:30");
+    }
 }

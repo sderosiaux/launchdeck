@@ -1,5 +1,6 @@
 use crate::model::{
-    Inventory, LaunchConfig, SafetyLevel, Service, ServiceScope, ServiceSource, ServiceStatus,
+    CalendarSchedule, Inventory, LaunchConfig, SafetyLevel, Service, ServiceScope, ServiceSource,
+    ServiceStatus,
 };
 use anyhow::{Context, Result};
 use plist::Value;
@@ -198,6 +199,7 @@ fn service_from_plist(path: &Path, scope: ServiceScope, uid: u32) -> Result<Serv
         start_interval: dict
             .get("StartInterval")
             .and_then(Value::as_unsigned_integer),
+        start_calendar_intervals: parse_start_calendar_intervals(dict.get("StartCalendarInterval")),
     };
 
     let domain = scope.domain(uid);
@@ -250,6 +252,43 @@ fn safety_for_scope(scope: &ServiceScope, dir: &Path) -> SafetyLevel {
             ServiceScope::GlobalAgent | ServiceScope::SystemDaemon => SafetyLevel::AdminRequired,
         }
     }
+}
+
+fn parse_start_calendar_intervals(value: Option<&Value>) -> Vec<CalendarSchedule> {
+    match value {
+        Some(Value::Dictionary(dict)) => calendar_schedule_from_dict(dict).into_iter().collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(Value::as_dictionary)
+            .filter_map(calendar_schedule_from_dict)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn calendar_schedule_from_dict(dict: &plist::Dictionary) -> Option<CalendarSchedule> {
+    let schedule = CalendarSchedule {
+        minute: calendar_component(dict, "Minute"),
+        hour: calendar_component(dict, "Hour"),
+        day: calendar_component(dict, "Day"),
+        weekday: calendar_component(dict, "Weekday"),
+        month: calendar_component(dict, "Month"),
+    };
+
+    if schedule.minute.is_none()
+        && schedule.hour.is_none()
+        && schedule.day.is_none()
+        && schedule.weekday.is_none()
+        && schedule.month.is_none()
+    {
+        None
+    } else {
+        Some(schedule)
+    }
+}
+
+fn calendar_component(dict: &plist::Dictionary, key: &str) -> Option<u64> {
+    dict.get(key).and_then(Value::as_unsigned_integer)
 }
 
 fn read_runtime(uid: u32, warnings: &mut Vec<String>) -> HashMap<String, RuntimeState> {

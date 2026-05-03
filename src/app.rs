@@ -43,6 +43,7 @@ pub enum DetailItem {
     RunAtLoad,
     KeepAlive,
     StartInterval,
+    Schedule,
     Health,
 }
 
@@ -64,6 +65,7 @@ impl DetailItem {
             Self::RunAtLoad => "RunAtLoad",
             Self::KeepAlive => "KeepAlive",
             Self::StartInterval => "StartInterval",
+            Self::Schedule => "schedule",
             Self::Health => "health",
         }
     }
@@ -77,7 +79,7 @@ impl DetailItem {
     }
 }
 
-const DETAIL_ITEMS: [DetailItem; 16] = [
+const DETAIL_ITEMS: [DetailItem; 17] = [
     DetailItem::Status,
     DetailItem::Source,
     DetailItem::Domain,
@@ -93,6 +95,7 @@ const DETAIL_ITEMS: [DetailItem; 16] = [
     DetailItem::RunAtLoad,
     DetailItem::KeepAlive,
     DetailItem::StartInterval,
+    DetailItem::Schedule,
     DetailItem::Health,
 ];
 
@@ -964,6 +967,7 @@ fn detail_item_value(service: &Service, item: DetailItem) -> String {
             .start_interval
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string()),
+        DetailItem::Schedule => service.config.schedule_summary(),
         DetailItem::Health => {
             if service.health.is_empty() {
                 "clean".to_string()

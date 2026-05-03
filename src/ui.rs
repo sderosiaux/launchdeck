@@ -77,6 +77,7 @@ fn draw_overview(frame: &mut Frame<'_>, app: &mut App, area: ratatui::layout::Re
         Cell::from("scope"),
         Cell::from("pid"),
         Cell::from("exit"),
+        Cell::from("schedule"),
         Cell::from("health"),
         Cell::from("path"),
     ])
@@ -122,6 +123,7 @@ fn draw_overview(frame: &mut Frame<'_>, app: &mut App, area: ratatui::layout::Re
                                 .map(|code| code.to_string())
                                 .unwrap_or_else(|| "-".to_string()),
                         ),
+                        Cell::from(service.config.schedule_summary()),
                         Cell::from(service.health.len().to_string()),
                         Cell::from(path),
                     ])
@@ -138,8 +140,9 @@ fn draw_overview(frame: &mut Frame<'_>, app: &mut App, area: ratatui::layout::Re
             Constraint::Length(13),
             Constraint::Length(7),
             Constraint::Length(6),
+            Constraint::Length(19),
             Constraint::Length(7),
-            Constraint::Percentage(45),
+            Constraint::Percentage(35),
         ],
     )
     .header(header)
@@ -301,6 +304,7 @@ fn detail_item_line<'a>(service: &Service, item: DetailItem, selected: bool) -> 
             .start_interval
             .map(|value| value.to_string())
             .unwrap_or_else(|| "-".to_string()),
+        DetailItem::Schedule => service.config.schedule_summary(),
         DetailItem::Health => {
             if service.health.is_empty() {
                 "clean".to_string()
@@ -319,7 +323,8 @@ fn detail_item_line<'a>(service: &Service, item: DetailItem, selected: bool) -> 
         DetailItem::Safety
         | DetailItem::RunAtLoad
         | DetailItem::KeepAlive
-        | DetailItem::StartInterval => Style::default().fg(Color::Yellow),
+        | DetailItem::StartInterval
+        | DetailItem::Schedule => Style::default().fg(Color::Yellow),
         DetailItem::Plist
         | DetailItem::Command
         | DetailItem::WorkingDirectory

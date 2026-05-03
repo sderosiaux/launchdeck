@@ -42,13 +42,13 @@ fn print_inventory(inventory: Inventory) -> io::Result<()> {
     let mut stdout = stdout.lock();
     writeln!(
         stdout,
-        "{:<10} {:<7} {:<13} {:<8} {:<6} {:<8} NAME",
-        "STATUS", "SOURCE", "SCOPE", "PID", "EXIT", "HEALTH"
+        "{:<10} {:<7} {:<13} {:<8} {:<6} {:<8} {:<24} NAME",
+        "STATUS", "SOURCE", "SCOPE", "PID", "EXIT", "HEALTH", "SCHEDULE"
     )?;
     for service in inventory.services {
         writeln!(
             stdout,
-            "{:<10} {:<7} {:<13} {:<8} {:<6} {:<8} {}",
+            "{:<10} {:<7} {:<13} {:<8} {:<6} {:<8} {:<24} {}",
             service.status,
             service.source,
             service.scope.label(),
@@ -61,6 +61,7 @@ fn print_inventory(inventory: Inventory) -> io::Result<()> {
                 .map(|code| code.to_string())
                 .unwrap_or_else(|| "-".to_string()),
             service.health.len(),
+            service.config.schedule_summary(),
             service.display_name
         )?;
     }
