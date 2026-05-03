@@ -26,6 +26,76 @@ pub enum ViewMode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DetailItem {
+    Status,
+    Source,
+    Domain,
+    Scope,
+    Safety,
+    Plist,
+    BrewFormula,
+    BrewStatus,
+    Command,
+    WorkingDirectory,
+    Stdout,
+    Stderr,
+    RunAtLoad,
+    KeepAlive,
+    StartInterval,
+    Health,
+}
+
+impl DetailItem {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Status => "status",
+            Self::Source => "source",
+            Self::Domain => "domain",
+            Self::Scope => "scope",
+            Self::Safety => "safety",
+            Self::Plist => "plist",
+            Self::BrewFormula => "brew formula",
+            Self::BrewStatus => "brew status",
+            Self::Command => "command",
+            Self::WorkingDirectory => "working directory",
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+            Self::RunAtLoad => "RunAtLoad",
+            Self::KeepAlive => "KeepAlive",
+            Self::StartInterval => "StartInterval",
+            Self::Health => "health",
+        }
+    }
+
+    fn log_stream(self) -> Option<LogStream> {
+        match self {
+            Self::Stdout => Some(LogStream::Stdout),
+            Self::Stderr => Some(LogStream::Stderr),
+            _ => None,
+        }
+    }
+}
+
+const DETAIL_ITEMS: [DetailItem; 16] = [
+    DetailItem::Status,
+    DetailItem::Source,
+    DetailItem::Domain,
+    DetailItem::Scope,
+    DetailItem::Safety,
+    DetailItem::Plist,
+    DetailItem::BrewFormula,
+    DetailItem::BrewStatus,
+    DetailItem::Command,
+    DetailItem::WorkingDirectory,
+    DetailItem::Stdout,
+    DetailItem::Stderr,
+    DetailItem::RunAtLoad,
+    DetailItem::KeepAlive,
+    DetailItem::StartInterval,
+    DetailItem::Health,
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LogStream {
     Stdout,
     Stderr,
@@ -141,6 +211,8 @@ pub struct App {
     pub sort_mode: SortMode,
     pub show_apple: bool,
     pub warnings_only: bool,
+    pub detail_selected: usize,
+    pub detail_scroll: usize,
     pub log_stream: LogStream,
     pub log_scroll: usize,
     pub editing_search: bool,
@@ -166,6 +238,8 @@ impl App {
             sort_mode: SortMode::Name,
             show_apple: false,
             warnings_only: false,
+            detail_selected: 0,
+            detail_scroll: 0,
             log_stream: LogStream::Stdout,
             log_scroll: 0,
             editing_search: false,
@@ -370,6 +444,52 @@ impl App {
         self.status_line = "service creation cancelled".to_string();
     }
 
+    fn open_detail(&mut self) {
+        self.mode = ViewMode::Detail;
+        self.detail_selected = 0;
+        self.detail_scroll = 0;
+        self.status_line = "detail: up/down moves inside, enter opens selected row".to_string();
+    }
+
+    fn close_detail(&mut self) {
+        self.mode = ViewMode::Overview;
+        self.status_line = "detail closed".to_string();
+    }
+
+    pub fn detail_items() -> &'static [DetailItem] {
+        &DETAIL_ITEMS
+    }
+
+    pub fn selected_detail_item(&self) -> DetailItem {
+        DETAIL_ITEMS[self.detail_selected.min(DETAIL_ITEMS.len() - 1)]
+    }
+
+    fn move_detail_down(&mut self) {
+        if self.detail_selected + 1 < DETAIL_ITEMS.len() {
+            self.detail_selected += 1;
+        }
+    }
+
+    fn move_detail_up(&mut self) {
+        self.detail_selected = self.detail_selected.saturating_sub(1);
+    }
+
+    fn page_detail_down(&mut self) {
+        self.detail_selected = (self.detail_selected + 6).min(DETAIL_ITEMS.len() - 1);
+    }
+
+    fn page_detail_up(&mut self) {
+        self.detail_selected = self.detail_selected.saturating_sub(6);
+    }
+
+    fn open_selected_detail_item(&mut self) {
+        let Some(stream) = self.selected_detail_item().log_stream() else {
+            self.status_line = format!("{} selected", self.selected_detail_item().label());
+            return;
+        };
+        self.open_logs(stream);
+    }
+
     fn save_create_form(&mut self) {
         let Some(form) = &self.create_form else {
             return;
@@ -387,8 +507,9 @@ impl App {
         }
     }
 
-    fn open_logs(&mut self) {
+    fn open_logs(&mut self, stream: LogStream) {
         self.mode = ViewMode::Logs;
+        self.log_stream = stream;
         self.log_scroll = 0;
         self.status_line = "logs: k/up scroll older, j/down newer, tab switches stream".to_string();
     }
@@ -607,6 +728,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         return handle_logs_key(app, key);
     }
 
+    if app.mode == ViewMode::Detail {
+        return handle_detail_key(app, key);
+    }
+
     match key.code {
         KeyCode::Char('q') => return true,
         KeyCode::Char('/') => {
@@ -630,12 +755,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::PageUp => app.page_up(),
         KeyCode::Enter => {
             if app.selected_service().is_some() {
-                app.mode = ViewMode::Detail;
+                app.open_detail();
             }
         }
         KeyCode::Char('l') => {
             if app.selected_service().is_some() {
-                app.open_logs();
+                app.open_logs(LogStream::Stdout);
             }
         }
         KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.mode = ViewMode::Overview,
@@ -647,6 +772,27 @@ fn handle_key(app: &mut App, key: KeyEvent) -> bool {
         _ => {}
     }
 
+    false
+}
+
+fn handle_detail_key(app: &mut App, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Char('q') => return true,
+        KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.close_detail(),
+        KeyCode::Char('j') | KeyCode::Down => app.move_detail_down(),
+        KeyCode::Char('k') | KeyCode::Up => app.move_detail_up(),
+        KeyCode::PageDown => app.page_detail_down(),
+        KeyCode::PageUp => app.page_detail_up(),
+        KeyCode::Char('g') => app.detail_selected = 0,
+        KeyCode::Char('G') => app.detail_selected = DETAIL_ITEMS.len() - 1,
+        KeyCode::Enter => app.open_selected_detail_item(),
+        KeyCode::Char('l') => app.open_logs(LogStream::Stdout),
+        KeyCode::Char('s') => app.plan_action(ActionKind::Start),
+        KeyCode::Char('x') => app.plan_action(ActionKind::Stop),
+        KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
+        KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
+        _ => {}
+    }
     false
 }
 

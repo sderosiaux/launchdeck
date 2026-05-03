@@ -1,4 +1,4 @@
-use crate::app::{App, ViewMode};
+use crate::app::{App, DetailItem, ViewMode};
 use crate::create::{CreateField, CreateServiceForm};
 use crate::model::{Service, ServiceStatus};
 use ratatui::Frame;
@@ -171,6 +171,8 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
         "y/enter confirm | n/esc/left/backspace cancel"
     } else if app.mode == ViewMode::Logs {
         "k/up older | j/down newer | PgUp/PgDn | g top | G bottom | tab/left/right stream | esc back"
+    } else if app.mode == ViewMode::Detail {
+        "up/down navigate detail | enter open stdout/stderr | l logs | s/x/R/e actions | esc back"
     } else {
         "q quit | / find | c clear | f source | F status | o sort | a apple | w warn | n new"
     };
@@ -184,155 +186,13 @@ fn draw_footer(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     );
 }
 
-fn draw_detail(frame: &mut Frame<'_>, app: &App) {
+fn draw_detail(frame: &mut Frame<'_>, app: &mut App) {
     let area = centered_rect(frame.area(), 82, 78);
     frame.render_widget(Clear, area);
 
-    let Some(service) = selected_service(app) else {
+    let Some(service) = selected_service(app).cloned() else {
         return;
     };
-
-    let mut lines = Vec::new();
-    lines.push(Line::from(vec![
-        Span::styled(
-            service.display_name.clone(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled(service.label.clone(), Style::default().fg(Color::DarkGray)),
-    ]));
-    lines.push(Line::from(""));
-    lines.push(kv_line(
-        "status",
-        service.status.to_string(),
-        status_style(&service.status),
-    ));
-    lines.push(kv_line(
-        "source",
-        service.source.to_string(),
-        Style::default().fg(Color::Blue),
-    ));
-    lines.push(kv_line(
-        "domain",
-        service.domain.clone(),
-        Style::default().fg(Color::Magenta),
-    ));
-    lines.push(kv_line(
-        "scope",
-        service.scope.label().to_string(),
-        Style::default().fg(Color::Magenta),
-    ));
-    lines.push(kv_line(
-        "safety",
-        service.safety_level.to_string(),
-        Style::default().fg(Color::Yellow),
-    ));
-    lines.push(kv_line(
-        "plist",
-        service
-            .plist_path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        Style::default().fg(Color::Green),
-    ));
-    lines.push(kv_line(
-        "brew formula",
-        service.brew_formula.as_deref().unwrap_or("-").to_string(),
-        Style::default().fg(Color::Blue),
-    ));
-    lines.push(kv_line(
-        "brew status",
-        service.brew_status.as_deref().unwrap_or("-").to_string(),
-        Style::default().fg(Color::Blue),
-    ));
-    lines.push(Line::from(""));
-    lines.push(kv_line(
-        "command",
-        service.config.command_preview(),
-        Style::default().fg(Color::Green),
-    ));
-    lines.push(kv_line(
-        "working directory",
-        service
-            .config
-            .working_directory
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        Style::default().fg(Color::Green),
-    ));
-    lines.push(kv_line(
-        "stdout",
-        service
-            .config
-            .stdout_path
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        Style::default().fg(Color::Green),
-    ));
-    lines.push(kv_line(
-        "stderr",
-        service
-            .config
-            .stderr_path
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        Style::default().fg(Color::Green),
-    ));
-    lines.push(kv_line(
-        "RunAtLoad",
-        service
-            .config
-            .run_at_load
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        Style::default().fg(Color::Yellow),
-    ));
-    lines.push(kv_line(
-        "KeepAlive",
-        service
-            .config
-            .keep_alive
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        Style::default().fg(Color::Yellow),
-    ));
-    lines.push(kv_line(
-        "StartInterval",
-        service
-            .config
-            .start_interval
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        Style::default().fg(Color::Yellow),
-    ));
-
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "health",
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
-    )));
-    if service.health.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  clean",
-            Style::default().fg(Color::Green),
-        )));
-    } else {
-        for item in &service.health {
-            lines.push(Line::from(vec![
-                Span::styled("  - ", Style::default().fg(Color::Red)),
-                Span::styled(item.clone(), Style::default().fg(Color::Red)),
-            ]));
-        }
-    }
 
     let block = Block::default()
         .title("Detail - esc closes")
@@ -342,7 +202,135 @@ fn draw_detail(frame: &mut Frame<'_>, app: &App) {
         horizontal: 2,
     });
     frame.render_widget(block, area);
+
+    let mut header = Vec::new();
+    header.push(Line::from(vec![
+        Span::styled(
+            service.display_name.clone(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        Span::styled(service.label.clone(), Style::default().fg(Color::DarkGray)),
+    ]));
+    header.push(Line::from(""));
+
+    let visible_rows = usize::from(inner.height.saturating_sub(header.len() as u16)).max(1);
+    sync_detail_viewport(app, visible_rows);
+
+    let mut body = Vec::new();
+    for (index, item) in App::detail_items().iter().enumerate() {
+        body.push(detail_item_line(
+            &service,
+            *item,
+            index == app.detail_selected,
+        ));
+    }
+
+    let start = app.detail_scroll.min(body.len().saturating_sub(1));
+    let end = (start + visible_rows).min(body.len());
+    let mut lines = header;
+    lines.extend(body[start..end].iter().cloned());
+
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn sync_detail_viewport(app: &mut App, visible_rows: usize) {
+    let item_count = App::detail_items().len();
+    let max_start = item_count.saturating_sub(visible_rows);
+    app.detail_scroll = app.detail_scroll.min(max_start);
+
+    if app.detail_selected < app.detail_scroll {
+        app.detail_scroll = app.detail_selected;
+    } else if app.detail_selected >= app.detail_scroll + visible_rows {
+        app.detail_scroll = app.detail_selected + 1 - visible_rows;
+    }
+}
+
+fn detail_item_line<'a>(service: &Service, item: DetailItem, selected: bool) -> Line<'a> {
+    let value = match item {
+        DetailItem::Status => service.status.to_string(),
+        DetailItem::Source => service.source.to_string(),
+        DetailItem::Domain => service.domain.clone(),
+        DetailItem::Scope => service.scope.label().to_string(),
+        DetailItem::Safety => service.safety_level.to_string(),
+        DetailItem::Plist => service
+            .plist_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        DetailItem::BrewFormula => service.brew_formula.as_deref().unwrap_or("-").to_string(),
+        DetailItem::BrewStatus => service.brew_status.as_deref().unwrap_or("-").to_string(),
+        DetailItem::Command => service.config.command_preview(),
+        DetailItem::WorkingDirectory => service
+            .config
+            .working_directory
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::Stdout => service
+            .config
+            .stdout_path
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::Stderr => service
+            .config
+            .stderr_path
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::RunAtLoad => service
+            .config
+            .run_at_load
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        DetailItem::KeepAlive => service
+            .config
+            .keep_alive
+            .as_deref()
+            .unwrap_or("-")
+            .to_string(),
+        DetailItem::StartInterval => service
+            .config
+            .start_interval
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        DetailItem::Health => {
+            if service.health.is_empty() {
+                "clean".to_string()
+            } else {
+                service.health.join(" | ")
+            }
+        }
+    };
+
+    let value_style = match item {
+        DetailItem::Status => status_style(&service.status),
+        DetailItem::Source | DetailItem::BrewFormula | DetailItem::BrewStatus => {
+            Style::default().fg(Color::Blue)
+        }
+        DetailItem::Domain | DetailItem::Scope => Style::default().fg(Color::Magenta),
+        DetailItem::Safety
+        | DetailItem::RunAtLoad
+        | DetailItem::KeepAlive
+        | DetailItem::StartInterval => Style::default().fg(Color::Yellow),
+        DetailItem::Plist
+        | DetailItem::Command
+        | DetailItem::WorkingDirectory
+        | DetailItem::Stdout
+        | DetailItem::Stderr => Style::default().fg(Color::Green),
+        DetailItem::Health => {
+            if service.health.is_empty() {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Red)
+            }
+        }
+    };
+
+    selectable_kv_line(item.label(), value, value_style, selected)
 }
 
 fn kv_line<'a>(key: &'static str, value: String, value_style: Style) -> Line<'a> {
@@ -353,6 +341,30 @@ fn kv_line<'a>(key: &'static str, value: String, value_style: Style) -> Line<'a>
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled(value, value_style),
+    ])
+}
+
+fn selectable_kv_line<'a>(
+    key: &'static str,
+    value: String,
+    value_style: Style,
+    selected: bool,
+) -> Line<'a> {
+    let marker = if selected { "> " } else { "  " };
+    let key_style = if selected {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD)
+    };
+
+    Line::from(vec![
+        Span::styled(format!("{marker}{key:<18}"), key_style),
         Span::styled(value, value_style),
     ])
 }

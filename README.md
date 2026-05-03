@@ -85,6 +85,20 @@ cargo run -- --list
 
 Actions show the exact command before execution. Press `y` to confirm or `n`/`Esc` to cancel.
 
+### Detail
+
+| Key | Action |
+| --- | --- |
+| `j` / `Down` | Move down inside the detail modal |
+| `k` / `Up` | Move up inside the detail modal |
+| `PageDown` | Move down by a page |
+| `PageUp` | Move up by a page |
+| `g` | First detail row |
+| `G` | Last detail row |
+| `Enter` | Open the selected stdout/stderr log row |
+| `l` | Open stdout logs |
+| `Esc` / `Backspace` / `Left` | Back to overview |
+
 ### Logs
 
 | Key | Action |
