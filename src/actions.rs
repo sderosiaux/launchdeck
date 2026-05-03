@@ -7,6 +7,7 @@ pub enum ActionKind {
     Stop,
     Restart,
     ToggleEnabled,
+    ToggleRunAtLoad,
 }
 
 impl ActionKind {
@@ -16,6 +17,7 @@ impl ActionKind {
             Self::Stop => "stop",
             Self::Restart => "restart",
             Self::ToggleEnabled => "toggle enabled",
+            Self::ToggleRunAtLoad => "toggle RunAtLoad",
         }
     }
 }
@@ -125,6 +127,13 @@ fn plan_brew(service: &Service, kind: ActionKind) -> ActionPlan {
         ActionKind::Start => "start",
         ActionKind::Stop => "stop",
         ActionKind::Restart => "restart",
+        ActionKind::ToggleRunAtLoad => {
+            return blocked(
+                service,
+                kind,
+                "Homebrew service plists are managed by brew services",
+            );
+        }
         ActionKind::ToggleEnabled => {
             return blocked(
                 service,
@@ -172,12 +181,30 @@ fn plan_launchd(service: &Service, kind: ActionKind) -> ActionPlan {
             "TERM".to_string(),
             target,
         ],
-        ActionKind::Restart => vec![
-            "launchctl".to_string(),
-            "kickstart".to_string(),
-            "-k".to_string(),
-            target,
-        ],
+        ActionKind::Restart => {
+            if service.loaded == Some(false) {
+                let Some(path) = &service.plist_path else {
+                    return blocked(service, kind, "unloaded service has no plist to bootstrap");
+                };
+                vec![
+                    "/bin/sh".to_string(),
+                    "-lc".to_string(),
+                    format!(
+                        "launchctl bootstrap {} {} && launchctl kickstart -k {}",
+                        shell_quote(&service.domain),
+                        shell_quote(&path.display().to_string()),
+                        shell_quote(&target),
+                    ),
+                ]
+            } else {
+                vec![
+                    "launchctl".to_string(),
+                    "kickstart".to_string(),
+                    "-k".to_string(),
+                    target,
+                ]
+            }
+        }
         ActionKind::ToggleEnabled => {
             let subcommand = if service.enabled == Some(false) {
                 "enable"
@@ -185,6 +212,24 @@ fn plan_launchd(service: &Service, kind: ActionKind) -> ActionPlan {
                 "disable"
             };
             vec!["launchctl".to_string(), subcommand.to_string(), target]
+        }
+        ActionKind::ToggleRunAtLoad => {
+            let Some(path) = &service.plist_path else {
+                return blocked(service, kind, "service has no plist to update");
+            };
+            let desired = if service.config.run_at_load == Some(true) {
+                "false"
+            } else {
+                "true"
+            };
+            let path = shell_quote(&path.display().to_string());
+            vec![
+                "/bin/sh".to_string(),
+                "-lc".to_string(),
+                format!(
+                    "if /usr/libexec/PlistBuddy -c 'Print :RunAtLoad' {path} >/dev/null 2>&1; then /usr/libexec/PlistBuddy -c 'Set :RunAtLoad {desired}' {path}; else /usr/libexec/PlistBuddy -c 'Add :RunAtLoad bool {desired}' {path}; fi && plutil -lint {path}",
+                ),
+            ]
         }
     };
 
@@ -204,12 +249,23 @@ fn warning_for_launchd(service: &Service, kind: ActionKind) -> String {
         }
         ActionKind::Start => "This will ask launchd to start the selected job.".to_string(),
         ActionKind::Stop => "This sends TERM to the selected launchd job.".to_string(),
+        ActionKind::Restart if service.loaded == Some(false) => {
+            "This will bootstrap the plist, then kickstart the launchd job.".to_string()
+        }
         ActionKind::Restart => "This kills and immediately restarts the launchd job.".to_string(),
         ActionKind::ToggleEnabled if service.status == ServiceStatus::Disabled => {
             "This will enable the launchd job in its domain.".to_string()
         }
         ActionKind::ToggleEnabled => "This will disable the launchd job in its domain.".to_string(),
+        ActionKind::ToggleRunAtLoad if service.config.run_at_load == Some(true) => {
+            "This will set RunAtLoad to false in the plist.".to_string()
+        }
+        ActionKind::ToggleRunAtLoad => "This will set RunAtLoad to true in the plist.".to_string(),
     }
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn blocked(service: &Service, kind: ActionKind, reason: &str) -> ActionPlan {
@@ -229,5 +285,73 @@ fn compact_output(bytes: &[u8], fallback: &str) -> String {
         fallback.to_string()
     } else {
         text.lines().take(3).collect::<Vec<_>>().join(" | ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{LaunchConfig, ServiceScope};
+    use std::path::PathBuf;
+
+    fn service(source: ServiceSource, run_at_load: Option<bool>) -> Service {
+        let mut config = LaunchConfig::empty();
+        config.run_at_load = run_at_load;
+
+        Service {
+            id: "gui/501/com.example.demo".to_string(),
+            label: "com.example.demo".to_string(),
+            display_name: "com.example.demo".to_string(),
+            source,
+            scope: ServiceScope::UserAgent,
+            domain: "gui/501".to_string(),
+            plist_path: Some(PathBuf::from("/tmp/com.example.demo.plist")),
+            config,
+            pid: None,
+            exit_code: None,
+            status: ServiceStatus::Stopped,
+            enabled: Some(true),
+            loaded: Some(true),
+            brew_formula: Some("demo".to_string()),
+            brew_status: None,
+            safety_level: SafetyLevel::UserWritable,
+            health: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn run_at_load_toggle_updates_launchd_plist() {
+        let plan = plan(
+            &service(ServiceSource::Launchd, Some(false)),
+            ActionKind::ToggleRunAtLoad,
+        );
+
+        assert!(!plan.is_blocked());
+        assert_eq!(plan.command.first().map(String::as_str), Some("/bin/sh"));
+        assert_eq!(plan.command.get(1).map(String::as_str), Some("-lc"));
+        assert!(
+            plan.command
+                .get(2)
+                .is_some_and(|command| command.contains("Add :RunAtLoad bool true"))
+        );
+        assert!(
+            plan.command
+                .get(2)
+                .is_some_and(|command| command.contains("plutil -lint"))
+        );
+    }
+
+    #[test]
+    fn run_at_load_toggle_is_blocked_for_brew_services() {
+        let plan = plan(
+            &service(ServiceSource::Homebrew, Some(false)),
+            ActionKind::ToggleRunAtLoad,
+        );
+
+        assert!(plan.is_blocked());
+        assert_eq!(
+            plan.blocked_reason.as_deref(),
+            Some("Homebrew service plists are managed by brew services")
+        );
     }
 }

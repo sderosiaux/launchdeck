@@ -81,8 +81,9 @@ cargo run -- --list
 | `l` | Open logs |
 | `s` | Prepare start action |
 | `x` | Prepare stop action |
-| `R` | Prepare restart action |
+| `R` | Prepare restart/load action |
 | `e` | Prepare enable/disable action |
+| `u` | Prepare RunAtLoad toggle action |
 | `n` | Create a user LaunchAgent |
 | `q` | Quit |
 
@@ -101,6 +102,7 @@ Actions show the exact command before execution. Press `y` to confirm or `n`/`Es
 | `c` | Copy selected field value |
 | `Enter` | Open the selected stdout/stderr log row |
 | `l` | Open stdout logs |
+| `u` | Prepare RunAtLoad toggle action |
 | `Esc` / `Backspace` / `Left` | Back to overview |
 
 ### Logs
