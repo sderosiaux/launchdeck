@@ -551,7 +551,11 @@ fn draw_help(frame: &mut Frame<'_>) {
         ),
         help_line(
             "Logs",
-            "j/down newer | k/up older | PgUp/PgDn | g top | G bottom | tab stream",
+            "j/down newer | k/up older | PgUp/PgDn | g top | G bottom | tab cycles stdout/stderr/os_log",
+        ),
+        help_line(
+            "os_log",
+            "r refresh from /usr/bin/log | w cycles 5m/15m/1h window",
         ),
         help_line(
             "Create",
@@ -638,11 +642,6 @@ fn draw_logs(frame: &mut Frame<'_>, app: &App) {
     });
     frame.render_widget(block, area);
 
-    let path = match app.log_stream {
-        crate::app::LogStream::Stdout => service.config.stdout_path.as_deref(),
-        crate::app::LogStream::Stderr => service.config.stderr_path.as_deref(),
-    };
-
     let mut lines = vec![
         Line::from(vec![
             Span::styled(
@@ -655,16 +654,39 @@ fn draw_logs(frame: &mut Frame<'_>, app: &App) {
             stream_tab("stdout", app.log_stream == crate::app::LogStream::Stdout),
             Span::raw(" "),
             stream_tab("stderr", app.log_stream == crate::app::LogStream::Stderr),
+            Span::raw(" "),
+            stream_tab("os_log", app.log_stream == crate::app::LogStream::Unified),
         ]),
         Line::from(""),
-        kv_line(
-            "path",
-            path.unwrap_or("-").to_string(),
-            Style::default().fg(Color::Green),
-        ),
     ];
 
     let visible_log_rows = usize::from(inner.height.saturating_sub(6)).max(1);
+    match app.log_stream {
+        crate::app::LogStream::Unified => render_unified(&mut lines, app, visible_log_rows),
+        stream => {
+            let path = match stream {
+                crate::app::LogStream::Stdout => service.config.stdout_path.as_deref(),
+                crate::app::LogStream::Stderr => service.config.stderr_path.as_deref(),
+                crate::app::LogStream::Unified => unreachable!(),
+            };
+            render_file_stream(&mut lines, app, path, visible_log_rows);
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn render_file_stream<'a>(
+    lines: &mut Vec<Line<'a>>,
+    app: &App,
+    path: Option<&str>,
+    visible_log_rows: usize,
+) {
+    lines.push(kv_line(
+        "path",
+        path.unwrap_or("-").to_string(),
+        Style::default().fg(Color::Green),
+    ));
     match path {
         Some(path) => match tail_file(path, 500) {
             Ok(file_lines) => {
@@ -710,8 +732,71 @@ fn draw_logs(frame: &mut Frame<'_>, app: &App) {
             )));
         }
     }
+}
 
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+fn render_unified<'a>(lines: &mut Vec<Line<'a>>, app: &App, visible_log_rows: usize) {
+    lines.push(kv_line(
+        "window",
+        format!("{} (w cycles, r refresh)", app.unified_window.label()),
+        Style::default().fg(Color::Green),
+    ));
+
+    let Some(cache) = app.unified_cache.as_ref() else {
+        lines.push(Line::from(""));
+        let msg = if app.unified_in_flight {
+            "fetching from /usr/bin/log..."
+        } else {
+            "press r to fetch os_log"
+        };
+        lines.push(Line::from(Span::styled(
+            msg,
+            Style::default().fg(Color::DarkGray),
+        )));
+        return;
+    };
+
+    lines.push(kv_line(
+        "predicate",
+        cache.predicate.clone(),
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    if let Some(err) = &cache.error {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("log show error: ", Style::default().fg(Color::Red)),
+            Span::styled(err.clone(), Style::default().fg(Color::Red)),
+        ]));
+        return;
+    }
+
+    let total = cache.lines.len();
+    let max_scroll = total.saturating_sub(visible_log_rows);
+    let scroll = app.log_scroll.min(max_scroll);
+    let start = total.saturating_sub(visible_log_rows + scroll);
+    let end = (start + visible_log_rows).min(total);
+    lines.push(kv_line(
+        "view",
+        format!(
+            "{}-{} of {} ({}ms)",
+            start.saturating_add(1).min(total),
+            end,
+            total,
+            cache.elapsed_ms
+        ),
+        Style::default().fg(Color::Yellow),
+    ));
+    lines.push(Line::from(""));
+    if cache.lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "no events in window",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for line in &cache.lines[start..end] {
+            lines.push(log_line(line));
+        }
+    }
 }
 
 fn stream_tab<'a>(label: &'static str, selected: bool) -> Span<'a> {

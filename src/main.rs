@@ -3,6 +3,7 @@ mod app;
 mod create;
 mod discovery;
 mod model;
+mod oslog;
 mod ui;
 
 use anyhow::Result;

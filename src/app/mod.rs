@@ -1,14 +1,20 @@
+mod detail;
+mod keys;
+mod unified;
+
 use crate::actions::{self, ActionKind, ActionPlan};
 use crate::create::{self, CreateServiceForm};
 use crate::discovery;
 use crate::model::{Inventory, Service, ServiceSource, ServiceStatus};
+use crate::oslog::LogWindow;
 use crate::ui;
 use anyhow::{Context, Result};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
+use detail::detail_item_value;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self, Write};
@@ -95,6 +101,7 @@ const DETAIL_ITEMS: [DetailItem; 17] = [
 pub enum LogStream {
     Stdout,
     Stderr,
+    Unified,
 }
 
 impl LogStream {
@@ -102,15 +109,27 @@ impl LogStream {
         match self {
             Self::Stdout => "stdout",
             Self::Stderr => "stderr",
+            Self::Unified => "os_log",
         }
     }
 
     fn toggle(self) -> Self {
         match self {
             Self::Stdout => Self::Stderr,
-            Self::Stderr => Self::Stdout,
+            Self::Stderr => Self::Unified,
+            Self::Unified => Self::Stdout,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct UnifiedLogCache {
+    pub service_id: String,
+    pub window: LogWindow,
+    pub elapsed_ms: u128,
+    pub lines: Vec<String>,
+    pub error: Option<String>,
+    pub predicate: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -211,6 +230,10 @@ pub struct App {
     pub detail_scroll: usize,
     pub log_stream: LogStream,
     pub log_scroll: usize,
+    pub unified_window: LogWindow,
+    pub unified_cache: Option<UnifiedLogCache>,
+    pub unified_in_flight: bool,
+    pub unified_fetch_requested: bool,
     pub editing_search: bool,
     pub mode: ViewMode,
     pub show_help: bool,
@@ -239,6 +262,10 @@ impl App {
             detail_scroll: 0,
             log_stream: LogStream::Stdout,
             log_scroll: 0,
+            unified_window: LogWindow::FifteenMin,
+            unified_cache: None,
+            unified_in_flight: false,
+            unified_fetch_requested: false,
             editing_search: false,
             mode: ViewMode::Overview,
             show_help: false,
@@ -408,14 +435,33 @@ impl App {
                 let item = self.selected_detail_item();
                 (item.label().to_string(), detail_item_value(service, item))
             }),
-            ViewMode::Logs => self.selected_service().map(|service| {
-                let value = match self.log_stream {
-                    LogStream::Stdout => service.config.stdout_path.clone(),
-                    LogStream::Stderr => service.config.stderr_path.clone(),
-                }
-                .unwrap_or_else(|| "-".to_string());
-                (format!("{} path", self.log_stream.label()), value)
-            }),
+            ViewMode::Logs => self
+                .selected_service()
+                .map(|service| match self.log_stream {
+                    LogStream::Stdout => (
+                        "stdout path".to_string(),
+                        service
+                            .config
+                            .stdout_path
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string()),
+                    ),
+                    LogStream::Stderr => (
+                        "stderr path".to_string(),
+                        service
+                            .config
+                            .stderr_path
+                            .clone()
+                            .unwrap_or_else(|| "-".to_string()),
+                    ),
+                    LogStream::Unified => (
+                        "os_log predicate".to_string(),
+                        self.unified_cache
+                            .as_ref()
+                            .map(|cache| cache.predicate.clone())
+                            .unwrap_or_else(|| "-".to_string()),
+                    ),
+                }),
         }
     }
 
@@ -604,7 +650,10 @@ impl App {
         self.mode = ViewMode::Logs;
         self.log_stream = stream;
         self.log_scroll = 0;
-        self.status_line = "logs: k/up scroll older, j/down newer, tab switches stream".to_string();
+        self.status_line = "logs: tab cycles streams, r refresh, w window".to_string();
+        if stream == LogStream::Unified {
+            self.ensure_unified_fetch();
+        }
     }
 
     fn scroll_logs_up(&mut self, amount: usize) {
@@ -619,6 +668,9 @@ impl App {
         self.log_stream = self.log_stream.toggle();
         self.log_scroll = 0;
         self.status_line = format!("showing {}", self.log_stream.label());
+        if self.log_stream == LogStream::Unified {
+            self.ensure_unified_fetch();
+        }
     }
 
     pub fn counts(&self) -> (usize, usize, usize, usize) {
@@ -746,12 +798,22 @@ pub fn run() -> Result<()> {
 
 fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     let (refresh_tx, refresh_rx) = mpsc::channel();
+    let (unified_tx, unified_rx) = mpsc::channel();
     let mut refresh_in_progress = false;
 
     loop {
         if let Some(inventory) = receive_refresh(&refresh_rx) {
             refresh_in_progress = false;
             app.apply_inventory(inventory);
+        }
+
+        if let Some(result) = unified::drain_unified(&unified_rx) {
+            app.apply_unified_result(result);
+        }
+
+        if app.unified_fetch_requested && !app.unified_in_flight {
+            app.unified_fetch_requested = false;
+            unified::spawn_unified_fetch(app, &unified_tx);
         }
 
         terminal.draw(|frame| ui::draw(frame, app))?;
@@ -772,7 +834,7 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App
             continue;
         };
 
-        if handle_key(app, key) {
+        if keys::handle_key(app, key) {
             break;
         }
     }
@@ -807,258 +869,6 @@ fn spawn_refresh(refresh_tx: Sender<Inventory>) {
     });
 }
 
-fn handle_key(app: &mut App, key: KeyEvent) -> bool {
-    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-        return true;
-    }
-
-    if matches!(key.code, KeyCode::Char('?') | KeyCode::F(1)) {
-        app.show_help = !app.show_help;
-        app.status_line = if app.show_help {
-            "help opened".to_string()
-        } else {
-            "help closed".to_string()
-        };
-        return false;
-    }
-
-    if app.show_help {
-        match key.code {
-            KeyCode::Char('q') => return true,
-            KeyCode::Esc | KeyCode::Backspace | KeyCode::Left | KeyCode::Enter => {
-                app.show_help = false;
-                app.status_line = "help closed".to_string();
-            }
-            _ => {}
-        }
-        return false;
-    }
-
-    if app.create_form.is_some() {
-        handle_create_key(app, key);
-        return false;
-    }
-
-    if app.pending_action.is_some() {
-        match key.code {
-            KeyCode::Char('y') | KeyCode::Enter => app.confirm_action(),
-            KeyCode::Char('n') | KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => {
-                app.cancel_action()
-            }
-            _ => {}
-        }
-        return false;
-    }
-
-    if app.editing_search {
-        return handle_search_key(app, key);
-    }
-
-    if app.mode == ViewMode::Logs {
-        return handle_logs_key(app, key);
-    }
-
-    if app.mode == ViewMode::Detail {
-        return handle_detail_key(app, key);
-    }
-
-    match key.code {
-        KeyCode::Char('q') => return true,
-        KeyCode::Char('/') => app.open_search(),
-        KeyCode::Char('C') => app.clear_search(),
-        KeyCode::Char('F') => app.cycle_status_filter(),
-        KeyCode::Char('P') => app.cycle_source_filter(),
-        KeyCode::Char('O') => app.cycle_sort(),
-        KeyCode::Char('A') => app.toggle_apple(),
-        KeyCode::Char('W') => app.toggle_warnings_only(),
-        KeyCode::Char('Y') => app.copy_selected_value(),
-        KeyCode::Char('L') if app.selected_service().is_some() => app.open_logs(LogStream::Stdout),
-        KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
-        KeyCode::Char('S') => app.plan_action(ActionKind::Start),
-        KeyCode::Char('X') => app.plan_action(ActionKind::Stop),
-        KeyCode::Char('T') => app.plan_action(ActionKind::ToggleEnabled),
-        KeyCode::Char('U') => app.plan_action(ActionKind::ToggleRunAtLoad),
-        KeyCode::Char('E') => app.plan_action(ActionKind::EditPlist),
-        KeyCode::Char('D') => app.plan_action(ActionKind::Delete),
-        KeyCode::Char('N') => app.open_create_form(),
-        KeyCode::F(5) => {
-            app.refresh_requested = true;
-            app.status_line = "refresh requested".to_string();
-        }
-        KeyCode::Char('r') if has_command_modifier(key) => {
-            app.refresh_requested = true;
-            app.status_line = "refresh requested".to_string();
-        }
-        KeyCode::Down => app.move_down(),
-        KeyCode::Up => app.move_up(),
-        KeyCode::PageDown => app.page_down(),
-        KeyCode::PageUp => app.page_up(),
-        KeyCode::Enter if app.selected_service().is_some() => app.open_detail(),
-        KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.mode = ViewMode::Overview,
-        KeyCode::Char(value) if is_quick_search_key(key) => app.start_quick_search(value),
-        _ => {}
-    }
-
-    false
-}
-
-fn handle_detail_key(app: &mut App, key: KeyEvent) -> bool {
-    match key.code {
-        KeyCode::Char('q') => return true,
-        KeyCode::Esc | KeyCode::Left | KeyCode::Backspace => app.close_detail(),
-        KeyCode::Char('j') | KeyCode::Down => app.move_detail_down(),
-        KeyCode::Char('k') | KeyCode::Up => app.move_detail_up(),
-        KeyCode::PageDown => app.page_detail_down(),
-        KeyCode::PageUp => app.page_detail_up(),
-        KeyCode::Char('g') => app.detail_selected = 0,
-        KeyCode::Char('G') => app.detail_selected = DETAIL_ITEMS.len() - 1,
-        KeyCode::Char('c') => app.copy_selected_value(),
-        KeyCode::Enter => app.open_selected_detail_item(),
-        KeyCode::Char('l') => app.open_logs(LogStream::Stdout),
-        KeyCode::Char('s') => app.plan_action(ActionKind::Start),
-        KeyCode::Char('x') => app.plan_action(ActionKind::Stop),
-        KeyCode::Char('R') => app.plan_action(ActionKind::Restart),
-        KeyCode::Char('e') => app.plan_action(ActionKind::ToggleEnabled),
-        KeyCode::Char('u') => app.plan_action(ActionKind::ToggleRunAtLoad),
-        KeyCode::Char('E') => app.plan_action(ActionKind::EditPlist),
-        KeyCode::Char('D') => app.plan_action(ActionKind::Delete),
-        _ => {}
-    }
-    false
-}
-
-fn is_quick_search_key(key: KeyEvent) -> bool {
-    let KeyCode::Char(value) = key.code else {
-        return false;
-    };
-    !value.is_control() && !has_command_modifier(key)
-}
-
-fn has_command_modifier(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) || key.modifiers.contains(KeyModifiers::ALT)
-}
-
-fn handle_create_key(app: &mut App, key: KeyEvent) {
-    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
-        app.save_create_form();
-        return;
-    }
-
-    match key.code {
-        KeyCode::Esc => app.cancel_create_form(),
-        KeyCode::F(5) => app.save_create_form(),
-        _ => {
-            let Some(form) = app.create_form.as_mut() else {
-                return;
-            };
-            match key.code {
-                KeyCode::Tab | KeyCode::Down | KeyCode::Right | KeyCode::Enter => form.next(),
-                KeyCode::BackTab | KeyCode::Up | KeyCode::Left => form.previous(),
-                KeyCode::Backspace => {
-                    let before = form.value_for(form.current_field());
-                    form.backspace();
-                    if before == form.value_for(form.current_field()) {
-                        form.previous();
-                    }
-                }
-                KeyCode::Char(' ') => {
-                    if matches!(
-                        form.current_field(),
-                        create::CreateField::RunAtLoad
-                            | create::CreateField::KeepAlive
-                            | create::CreateField::BootstrapNow
-                            | create::CreateField::StartNow
-                    ) {
-                        form.toggle();
-                    } else {
-                        form.insert(' ');
-                    }
-                }
-                KeyCode::Char(value) => form.insert(value),
-                _ => {}
-            }
-        }
-    }
-}
-
-fn handle_logs_key(app: &mut App, key: KeyEvent) -> bool {
-    match key.code {
-        KeyCode::Char('q') => return true,
-        KeyCode::Esc | KeyCode::Backspace => app.mode = ViewMode::Detail,
-        KeyCode::Char('j') | KeyCode::Down => app.scroll_logs_down(1),
-        KeyCode::Char('k') | KeyCode::Up => app.scroll_logs_up(1),
-        KeyCode::PageDown => app.scroll_logs_down(10),
-        KeyCode::PageUp => app.scroll_logs_up(10),
-        KeyCode::Char('G') => app.log_scroll = 0,
-        KeyCode::Char('g') => app.log_scroll = usize::MAX / 2,
-        KeyCode::Char('c') => app.copy_selected_value(),
-        KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => app.switch_log_stream(),
-        KeyCode::Char('l') => app.switch_log_stream(),
-        _ => {}
-    }
-    false
-}
-
-fn detail_item_value(service: &Service, item: DetailItem) -> String {
-    match item {
-        DetailItem::Status => service.status.to_string(),
-        DetailItem::Source => service.source.to_string(),
-        DetailItem::Domain => service.domain.clone(),
-        DetailItem::Scope => service.scope.label().to_string(),
-        DetailItem::Safety => service.safety_level.to_string(),
-        DetailItem::Plist => service
-            .plist_path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        DetailItem::BrewFormula => service.brew_formula.as_deref().unwrap_or("-").to_string(),
-        DetailItem::BrewStatus => service.brew_status.as_deref().unwrap_or("-").to_string(),
-        DetailItem::Command => service.config.command_preview(),
-        DetailItem::WorkingDirectory => service
-            .config
-            .working_directory
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::Stdout => service
-            .config
-            .stdout_path
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::Stderr => service
-            .config
-            .stderr_path
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::RunAtLoad => service
-            .config
-            .run_at_load
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        DetailItem::KeepAlive => service
-            .config
-            .keep_alive
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::StartInterval => service
-            .config
-            .start_interval
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        DetailItem::Schedule => service.config.schedule_summary(),
-        DetailItem::Health => {
-            if service.health.is_empty() {
-                "clean".to_string()
-            } else {
-                service.health.join(" | ")
-            }
-        }
-    }
-}
-
 fn copy_to_clipboard(value: &str) -> Result<()> {
     let mut child = Command::new("pbcopy")
         .stdin(Stdio::piped())
@@ -1074,45 +884,6 @@ fn copy_to_clipboard(value: &str) -> Result<()> {
         anyhow::bail!("pbcopy exited with {status}");
     }
     Ok(())
-}
-
-fn handle_search_key(app: &mut App, key: KeyEvent) -> bool {
-    match key.code {
-        KeyCode::Esc | KeyCode::Left => {
-            app.editing_search = false;
-            app.status_line = "search cancelled".to_string();
-        }
-        KeyCode::Enter => {
-            app.editing_search = false;
-            if app.selected_service().is_some() {
-                app.open_detail();
-            } else {
-                app.status_line = format!("{} services match", app.filtered.len());
-            }
-        }
-        KeyCode::Down => app.move_down(),
-        KeyCode::Up => app.move_up(),
-        KeyCode::PageDown => app.page_down(),
-        KeyCode::PageUp => app.page_up(),
-        KeyCode::Char('C') => {
-            app.editing_search = false;
-            app.clear_search();
-        }
-        KeyCode::Backspace => {
-            app.search.pop();
-            app.selected = 0;
-            app.viewport_start = 0;
-            app.apply_filter();
-        }
-        KeyCode::Char(value) => {
-            app.search.push(value);
-            app.selected = 0;
-            app.viewport_start = 0;
-            app.apply_filter();
-        }
-        _ => {}
-    }
-    false
 }
 
 #[cfg(test)]
