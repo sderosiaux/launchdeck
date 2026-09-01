@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Launchdeck — the missing service dashboard for macOS</title>
+    <title>Launchdeck — see what your Mac runs behind your back</title>
     <meta
       name="description"
-      content="A fast terminal dashboard for launchd jobs and Homebrew services on macOS. Status, schedules, plists, logs and guarded actions, without spelunking through launchctl, brew services and scattered plist files."
+      content="Your Mac is running things you never approved and can't see. Launchdeck puts every background service on one screen, tells you which ones matter, and lets you shut them down for good."
     />
     <meta
       name="keywords"
-      content="macOS, launchd, launchctl, Homebrew, brew services, LaunchAgent, LaunchDaemon, plist, TUI, terminal, service manager, Rust, ratatui"
+      content="macOS, launchd, launchctl, Homebrew, brew services, LaunchAgent, LaunchDaemon, background services, startup items, mac cleanup, TUI, terminal, Rust"
     />
     <meta name="author" content="Stéphane Derosiaux" />
     <meta
@@ -21,11 +21,10 @@
     <meta name="color-scheme" content="light" />
     <link rel="canonical" href="https://sderosiaux.github.io/launchdeck/" />
 
-    <!-- Open Graph -->
-    <meta property="og:title" content="Launchdeck — the missing service dashboard for macOS" />
+    <meta property="og:title" content="Launchdeck — see what your Mac runs behind your back" />
     <meta
       property="og:description"
-      content="launchd jobs and Homebrew services in one readable control surface. Status, schedules, plists, logs and guarded actions, in your terminal."
+      content="Every background service on one screen. Find what's failing, what wakes up at night, and what refuses to die."
     />
     <meta property="og:url" content="https://sderosiaux.github.io/launchdeck/" />
     <meta property="og:site_name" content="Launchdeck" />
@@ -37,16 +36,15 @@
     <meta property="og:image:type" content="image/png" />
     <meta
       property="og:image:alt"
-      content="The Launchdeck service list, showing launchd and Homebrew services with status, scope, schedule and plist path."
+      content="Launchdeck showing every background service on a Mac in a single list."
     />
 
-    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:creator" content="@sderosiaux" />
-    <meta name="twitter:title" content="Launchdeck — the missing service dashboard for macOS" />
+    <meta name="twitter:title" content="Launchdeck — see what your Mac runs behind your back" />
     <meta
       name="twitter:description"
-      content="launchd jobs and Homebrew services in one readable control surface. Status, schedules, plists, logs and guarded actions, in your terminal."
+      content="Every background service on one screen. Find what's failing, what wakes up at night, and what refuses to die."
     />
     <meta
       name="twitter:image"
@@ -56,7 +54,6 @@
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="favicon.svg" />
 
-    <!-- Performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://api.github.com" crossorigin />
@@ -72,28 +69,18 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Launchdeck",
-        "alternateName": "The missing service dashboard for macOS",
         "applicationCategory": "DeveloperApplication",
         "applicationSubCategory": "System service manager",
         "operatingSystem": "macOS",
         "softwareVersion": "0.1.4",
         "url": "https://sderosiaux.github.io/launchdeck/",
-        "description": "Terminal dashboard that unifies launchd jobs and Homebrew services on macOS: runtime status, schedules, parsed plist configuration, logs and guarded lifecycle actions.",
+        "description": "Terminal dashboard that shows every background service running on a Mac, what state it is really in, and lets you stop it for good.",
         "image": "https://sderosiaux.github.io/launchdeck/images/og-card.png",
         "screenshot": "https://sderosiaux.github.io/launchdeck/images/screenshot.png",
         "downloadUrl": "https://github.com/sderosiaux/launchdeck/releases/latest",
         "softwareHelp": "https://github.com/sderosiaux/launchdeck",
         "license": "https://opensource.org/licenses/MIT",
         "programmingLanguage": "Rust",
-        "featureList": [
-          "One service list for launchd jobs and Homebrew services",
-          "A distinct scheduled state for loaded jobs that are not running now",
-          "Provenance: which tool installed each job",
-          "Per-action privilege model with interactive sudo",
-          "Scrollable stdout, stderr and os_log views",
-          "Guarded start, stop, restart, enable, disable and delete",
-          "User LaunchAgent creation without hand-writing XML"
-        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "author": { "@type": "Person", "name": "Stéphane Derosiaux" }
       }
@@ -106,50 +93,50 @@
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "How is Launchdeck different from launchctl?",
+            "name": "What does Launchdeck actually show me?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "launchctl knows runtime state but its output is dense and domain-oriented, and it says nothing about the plist that defines the job. Launchdeck joins launchctl state, Homebrew metadata and parsed plist configuration into one list, so you see the schedule, the command, the log paths and the runtime status together."
+              "text": "Every background service on your Mac in one list: what is running, what is idle, what is scheduled to wake up later, what has been failing, and what is installed but not loaded. Both launchd jobs and Homebrew services, together."
             }
           },
           {
             "@type": "Question",
-            "name": "Does Launchdeck need root?",
+            "name": "Will it change anything without asking?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Only for what genuinely requires it. Privileges are decided per action, not per service: an agent in /Library/LaunchAgents is root-owned on disk but runs in your own gui domain, so starting it needs nothing while deleting its plist needs root. When root is required, Launchdeck prefixes the command with sudo, shows it in full, and leaves the TUI so sudo can prompt on the real terminal."
+              "text": "No. Launchdeck is read-only until you confirm. Every action shows the exact command before it runs, Apple system services are inspect-only, and anything destructive asks twice."
             }
           },
           {
             "@type": "Question",
-            "name": "Will Launchdeck change anything without asking?",
+            "name": "Is this safe on a work machine?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Every action shows the exact command before it runs and waits for confirmation. Services under /System/Library are inspect-only, and vendor or runtime-only jobs are blocked unless they can be classified safely."
+              "text": "It makes no network calls and collects no telemetry. It runs the same standard macOS commands you would run by hand, and shows you each one before running it. The source is on GitHub under MIT or Apache-2.0."
             }
           },
           {
             "@type": "Question",
-            "name": "What is the scheduled status?",
+            "name": "Do I need Homebrew?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "A job that is loaded into launchd, has no running process right now, but has a StartInterval or StartCalendarInterval configured. In launchctl output it is indistinguishable from a stopped job, which is why a service you think is dead may wake up on its own later."
+              "text": "No. If you have it, Homebrew services show up in the same list and are managed through brew so nothing gets out of sync. If you do not, you simply see the rest."
             }
           },
           {
             "@type": "Question",
-            "name": "Does it work with Homebrew services?",
+            "name": "Does it need my password?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Homebrew services appear in the same list as launchd jobs and are managed through brew services, so Launchdeck never fights the tool that owns them. Homebrew is optional; without it, Launchdeck simply shows launchd jobs."
+              "text": "Only for the few things that genuinely require root, and it tells you which ones up front. When it does, macOS prompts you directly. Your password never passes through Launchdeck."
             }
           },
           {
             "@type": "Question",
-            "name": "Is Launchdeck safe to run on a work machine?",
+            "name": "Linux or Windows?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Launchdeck is read-only until you confirm an action. It shells out to launchctl, brew, plutil and log, sends nothing over the network, and has no telemetry. It is MIT or Apache-2.0 licensed and the source is on GitHub."
+              "text": "No. Launchdeck is built around how macOS runs background work, and porting it elsewhere would make it a different tool."
             }
           }
         ]
@@ -158,7 +145,6 @@
 
     <style>
       :root {
-        /* Warm neutral base: this is a terminal tool, not a SaaS dashboard. */
         --bg: #ffffff;
         --bg-soft: #faf9f7;
         --ink: #0c0a09;
@@ -169,7 +155,6 @@
         --border: #e7e5e4;
         --border-strong: #d6d3d1;
 
-        /* Accent mirrors the app's own semantic palette. */
         --accent: #0f766e;
         --accent-hover: #115e59;
         --accent-soft: #f0fdfa;
@@ -226,19 +211,19 @@
       h3 {
         color: var(--ink);
         letter-spacing: -0.025em;
-        line-height: 1.12;
+        line-height: 1.1;
         margin: 0;
       }
       h1 {
-        font-size: clamp(38px, 5.6vw, 62px);
+        font-size: clamp(40px, 6vw, 68px);
         font-weight: 600;
       }
       h2 {
-        font-size: clamp(27px, 3.4vw, 38px);
+        font-size: clamp(29px, 3.8vw, 44px);
         font-weight: 600;
       }
       h3 {
-        font-size: 17px;
+        font-size: 18px;
         font-weight: 600;
         letter-spacing: -0.012em;
       }
@@ -278,8 +263,7 @@
         padding: 0 24px;
       }
       section {
-        padding: 92px 0;
-        border-top: 1px solid var(--border);
+        padding: 96px 0;
       }
       .eyebrow {
         display: inline-block;
@@ -289,12 +273,12 @@
         letter-spacing: 0.1em;
         text-transform: uppercase;
         color: var(--accent);
-        margin-bottom: 14px;
+        margin-bottom: 16px;
       }
       .lede {
-        font-size: clamp(16.5px, 1.6vw, 19px);
+        font-size: clamp(17px, 1.7vw, 20px);
         color: var(--muted);
-        max-width: 62ch;
+        max-width: 60ch;
       }
 
       /* ---------- Nav ---------- */
@@ -421,12 +405,10 @@
 
       /* ---------- Hero ---------- */
       .hero {
-        border-top: 0;
-        padding: 76px 0 0;
+        padding: 84px 0 0;
         position: relative;
         overflow: hidden;
       }
-      /* Dotted grid: quiet texture, echoes a terminal cell matrix. */
       .hero::before {
         content: "";
         position: absolute;
@@ -445,7 +427,7 @@
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-bottom: 22px;
+        margin-bottom: 24px;
       }
       .pill {
         display: inline-flex;
@@ -470,14 +452,14 @@
         color: var(--muted-dim);
       }
       .hero .lede {
-        margin-top: 22px;
-        max-width: 64ch;
+        margin-top: 24px;
+        max-width: 58ch;
       }
       .ctas {
         display: flex;
         flex-wrap: wrap;
         gap: 12px;
-        margin-top: 30px;
+        margin-top: 32px;
       }
       .install-line {
         margin-top: 22px;
@@ -528,7 +510,7 @@
         color: var(--muted-dim);
       }
       .screenshot {
-        margin: 58px auto 0;
+        margin: 62px auto 0;
         max-width: 1180px;
         padding: 0 24px;
         opacity: 0;
@@ -575,11 +557,10 @@
         height: auto;
       }
 
-      /* ---------- Dark problem section ---------- */
+      /* ---------- Dark section ---------- */
       .section-dark {
         background: var(--ink);
         color: #d6d3d1;
-        border-top: 0;
       }
       .section-dark h2,
       .section-dark h3 {
@@ -596,33 +577,9 @@
         border-color: #292524;
         color: #e7e5e4;
       }
-      .why-head {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 34px;
-        align-items: end;
-        margin-bottom: 46px;
-      }
-      .why-stats {
-        display: flex;
-        gap: 28px;
-        font-family: var(--mono);
-      }
-      .why-stats div {
-        text-align: right;
-      }
-      .why-stats .num {
-        display: block;
-        font-size: 30px;
-        font-weight: 600;
-        color: #fafaf9;
-        line-height: 1.1;
-      }
-      .why-stats .lab {
-        font-size: 11px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #78716c;
+      .dark-head {
+        max-width: 40ch;
+        margin-bottom: 52px;
       }
       .mosaic {
         display: grid;
@@ -630,11 +587,10 @@
         gap: 16px;
       }
       .tile {
-        background: #16130f;
         background: linear-gradient(180deg, #17140f 0%, #131110 100%);
         border: 1px solid #292524;
         border-radius: var(--radius-lg);
-        padding: 24px;
+        padding: 28px;
         grid-column: span 2;
         transition:
           border-color 0.2s,
@@ -647,41 +603,24 @@
       .tile.span-3 {
         grid-column: span 3;
       }
-      .tile-tag {
-        display: inline-block;
-        font-family: var(--mono);
-        font-size: 10.5px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #78716c;
-        border: 1px solid #292524;
-        border-radius: 5px;
-        padding: 2px 7px;
-        margin-bottom: 14px;
-      }
       .tile h3 {
-        margin-bottom: 9px;
+        font-size: 19px;
+        margin-bottom: 10px;
+        letter-spacing: -0.02em;
       }
       .tile p {
         font-size: 14.5px;
         color: #a8a29e;
       }
-      .tile pre {
-        margin-top: 14px;
-        background: #0c0a09;
-        border: 1px solid #292524;
-        font-size: 12.5px;
-        padding: 12px 14px;
-      }
       .term-out {
         font-family: var(--mono);
         font-size: 12.5px;
-        line-height: 1.75;
-        margin-top: 14px;
+        line-height: 1.8;
+        margin-top: 18px;
         background: #0c0a09;
         border: 1px solid #292524;
         border-radius: 8px;
-        padding: 12px 14px;
+        padding: 14px 16px;
         overflow-x: auto;
         white-space: pre;
         color: #a8a29e;
@@ -705,165 +644,58 @@
         color: #e7e5e4;
       }
 
-      /* ---------- Status table ---------- */
-      .status-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
-        gap: 14px;
-        margin-top: 42px;
-      }
-      .status-row {
+      /* ---------- Promises ---------- */
+      .promises {
         display: flex;
-        gap: 14px;
-        align-items: flex-start;
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 16px 18px;
-        background: var(--bg);
-        transition:
-          border-color 0.18s,
-          box-shadow 0.18s;
+        flex-direction: column;
+        gap: 70px;
+        margin-top: 62px;
       }
-      .status-row:hover {
-        border-color: var(--border-strong);
-        box-shadow: var(--shadow-sm);
-      }
-      .status-key {
-        font-family: var(--mono);
-        font-size: 12.5px;
-        font-weight: 500;
-        padding: 3px 9px;
-        border-radius: 6px;
-        flex-shrink: 0;
-        border: 1px solid;
-      }
-      .st-running {
-        color: var(--running);
-        border-color: #a7f3d0;
-        background: #ecfdf5;
-      }
-      .st-scheduled {
-        color: var(--scheduled);
-        border-color: #bae6fd;
-        background: #f0f9ff;
-      }
-      .st-stopped {
-        color: var(--muted);
-        border-color: var(--border-strong);
-        background: var(--bg-soft);
-      }
-      .st-unloaded {
-        color: var(--muted-dim);
-        border-color: var(--border);
-        background: var(--bg-soft);
-      }
-      .st-disabled {
-        color: var(--warn);
-        border-color: #fde68a;
-        background: #fffbeb;
-      }
-      .st-failed {
-        color: var(--fail);
-        border-color: #fecaca;
-        background: #fef2f2;
-      }
-      .st-unknown {
-        color: var(--muted);
-        border-color: var(--border);
-        background: var(--bg);
-        border-style: dashed;
-      }
-      .status-row p {
-        font-size: 14px;
-        color: var(--muted);
-      }
-      .callout {
-        margin-top: 30px;
-        border-left: 3px solid var(--accent);
-        background: var(--accent-soft);
-        border-radius: 0 var(--radius) var(--radius) 0;
-        padding: 16px 20px;
-        font-size: 14.5px;
-        color: var(--ink-soft);
-      }
-
-      /* ---------- Two-column feature blocks ---------- */
-      .split {
+      .promise {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 56px;
         align-items: center;
-        margin-top: 44px;
       }
-      .split.narrow {
-        gap: 44px;
+      .promise:nth-child(even) .promise-text {
+        order: 2;
       }
-      .origin-list {
-        display: flex;
-        flex-direction: column;
-        gap: 9px;
-      }
-      .origin {
-        display: grid;
-        grid-template-columns: 118px 1fr;
-        gap: 14px;
-        align-items: baseline;
-        font-size: 14px;
-        padding: 9px 0;
-        border-bottom: 1px dashed var(--border);
-      }
-      .origin:last-child {
-        border-bottom: 0;
-      }
-      .origin b {
+      .promise-num {
         font-family: var(--mono);
-        font-size: 12.5px;
+        font-size: 12px;
         font-weight: 500;
+        letter-spacing: 0.1em;
         color: var(--accent);
+        margin-bottom: 14px;
       }
-      .origin span {
+      .promise h3 {
+        font-size: clamp(24px, 2.6vw, 31px);
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        line-height: 1.15;
+        margin-bottom: 16px;
+      }
+      .promise p {
+        font-size: 16.5px;
         color: var(--muted);
+        max-width: 52ch;
       }
-
-      .elev-table {
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        overflow: hidden;
+      .promise p + p {
+        margin-top: 14px;
       }
-      .elev-row {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 16px;
-        align-items: center;
-        padding: 13px 18px;
-        border-bottom: 1px solid var(--border);
-        font-size: 14px;
+      .promise-visual {
+        background: var(--ink);
+        border-radius: var(--radius-lg);
+        border: 1px solid #292524;
+        padding: 22px 24px;
+        box-shadow: var(--shadow-md);
       }
-      .elev-row:last-child {
-        border-bottom: 0;
-      }
-      .elev-row.head {
-        background: var(--bg-soft);
-        font-family: var(--mono);
-        font-size: 11.5px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-      .elev-row code {
-        font-size: 12.5px;
-      }
-      .tick {
-        font-family: var(--mono);
-        font-size: 12.5px;
-        font-weight: 500;
-        white-space: nowrap;
-      }
-      .tick.no {
-        color: var(--running);
-      }
-      .tick.yes {
-        color: var(--warn);
+      .promise-visual .term-out {
+        margin-top: 0;
+        border: 0;
+        background: none;
+        padding: 0;
+        font-size: 13px;
       }
 
       /* ---------- Features ---------- */
@@ -871,12 +703,12 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 18px;
-        margin-top: 44px;
+        margin-top: 48px;
       }
       .feat {
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 24px;
+        padding: 26px;
         background: var(--bg);
         transition:
           border-color 0.18s,
@@ -896,7 +728,7 @@
         border: 1px solid var(--accent-border);
         display: grid;
         place-items: center;
-        margin-bottom: 15px;
+        margin-bottom: 16px;
         color: var(--accent);
       }
       .feat-icon svg {
@@ -911,12 +743,11 @@
         color: var(--muted);
       }
 
-      /* ---------- Keys ---------- */
       .keys {
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
-        margin-top: 36px;
+        margin-top: 40px;
       }
       .key {
         display: inline-flex;
@@ -943,12 +774,12 @@
         text-align: center;
       }
 
-      /* ---------- Install timeline ---------- */
+      /* ---------- Install ---------- */
       .timeline {
-        margin-top: 46px;
+        margin-top: 50px;
         display: flex;
         flex-direction: column;
-        gap: 30px;
+        gap: 32px;
       }
       .tline-item {
         display: grid;
@@ -973,10 +804,10 @@
         margin-bottom: 10px;
       }
       .tline-item p {
-        font-size: 14.5px;
+        font-size: 15px;
         color: var(--muted);
         margin-bottom: 12px;
-        max-width: 70ch;
+        max-width: 66ch;
       }
       .tline-item pre {
         margin-bottom: 12px;
@@ -986,14 +817,13 @@
         margin-bottom: 0;
       }
       .alt-install {
-        margin-top: 14px;
-        font-size: 13.5px;
+        font-size: 14px;
         color: var(--muted);
       }
 
       /* ---------- FAQ ---------- */
       .faq-list {
-        margin-top: 40px;
+        margin-top: 44px;
         border-top: 1px solid var(--border);
       }
       details.faq-item {
@@ -1023,9 +853,7 @@
         transform: translateY(-50%);
         font-family: var(--mono);
         font-size: 20px;
-        font-weight: 400;
         color: var(--muted-dim);
-        transition: transform 0.2s;
       }
       details.faq-item[open] summary::after {
         content: "−";
@@ -1035,7 +863,45 @@
         padding: 0 40px 22px 0;
         font-size: 15px;
         color: var(--muted);
-        max-width: 78ch;
+        max-width: 76ch;
+      }
+
+      /* ---------- Closer ---------- */
+      .closer {
+        background: var(--ink);
+        color: #d6d3d1;
+        text-align: center;
+      }
+      .closer h2 {
+        color: #fafaf9;
+        max-width: 20ch;
+        margin: 0 auto;
+      }
+      .closer p {
+        color: #a8a29e;
+        margin: 20px auto 0;
+        max-width: 48ch;
+        font-size: 17px;
+      }
+      .closer .ctas {
+        justify-content: center;
+      }
+      .closer .btn-primary {
+        background: #fafaf9;
+        color: var(--ink);
+      }
+      .closer .btn-primary:hover {
+        background: #fff;
+        color: var(--ink);
+      }
+      .closer .btn-ghost {
+        background: transparent;
+        color: #e7e5e4;
+        border-color: #44403c;
+      }
+      .closer .btn-ghost:hover {
+        color: #fff;
+        border-color: #78716c;
       }
 
       /* ---------- Footer ---------- */
@@ -1076,13 +942,6 @@
         .nav-links > a:not(.btn):not(.nav-star) {
           display: none;
         }
-        .why-head {
-          grid-template-columns: 1fr;
-          align-items: start;
-        }
-        .why-stats div {
-          text-align: left;
-        }
         .mosaic {
           grid-template-columns: 1fr 1fr;
         }
@@ -1090,17 +949,23 @@
         .tile.span-3 {
           grid-column: span 2;
         }
-        .split {
+        .promise {
           grid-template-columns: 1fr;
-          gap: 34px;
+          gap: 30px;
+        }
+        .promise:nth-child(even) .promise-text {
+          order: 0;
+        }
+        .promises {
+          gap: 56px;
         }
       }
       @media (max-width: 620px) {
         section {
-          padding: 64px 0;
+          padding: 68px 0;
         }
         .hero {
-          padding-top: 52px;
+          padding-top: 54px;
         }
         .mosaic {
           grid-template-columns: 1fr;
@@ -1109,19 +974,12 @@
         .tile.span-3 {
           grid-column: span 1;
         }
-        .why-stats {
-          gap: 20px;
-        }
         .nav-star span:not(.count) {
           display: none;
         }
-        .origin {
-          grid-template-columns: 1fr;
-          gap: 3px;
-        }
         .screenshot {
           padding: 0 16px;
-          margin-top: 40px;
+          margin-top: 42px;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -1161,9 +1019,8 @@
           Launchdeck
         </a>
         <nav class="nav-links">
-          <a href="#why">Why</a>
-          <a href="#status">Status model</a>
-          <a href="#control">Control</a>
+          <a href="#invisible">The problem</a>
+          <a href="#promises">What you get</a>
           <a href="#install">Install</a>
           <a href="#faq">FAQ</a>
           <a
@@ -1183,9 +1040,7 @@
           </a>
           <a
             class="btn btn-primary"
-            href="https://github.com/sderosiaux/launchdeck/releases/latest"
-            target="_blank"
-            rel="noopener"
+            href="#install"
             >Install</a
           >
         </nav>
@@ -1198,26 +1053,20 @@
         <div class="wrap">
           <div class="hero-badges">
             <span class="pill accent">macOS</span>
-            <span class="pill">launchd + Homebrew</span>
-            <span class="pill">Written in Rust</span>
-            <span class="pill">MIT / Apache-2.0</span>
+            <span class="pill">Free &amp; open source</span>
+            <span class="pill">No telemetry</span>
           </div>
           <h1>
-            Every background job on your Mac,<br />
-            <span class="dim">in one place.</span>
+            Your Mac is running things<br />
+            <span class="dim">you never agreed to.</span>
           </h1>
           <p class="lede">
-            Launchdeck gives <code>launchd</code> jobs and Homebrew services one fast, readable
-            control surface: status, schedules, plist metadata, logs and guarded actions — without
-            spelunking through <code>launchctl</code>, <code>brew services</code> and plist files
-            scattered across four directories.
+            Updaters for apps you deleted. Jobs that wake up while you sleep. A service that died
+            months ago and never told you. Launchdeck puts all of it on one screen — and lets you
+            shut it down for good.
           </p>
           <div class="ctas">
-            <a
-              class="btn btn-primary btn-lg"
-              href="#install"
-              >Install Launchdeck</a
-            >
+            <a class="btn btn-primary btn-lg" href="#install">See what's running</a>
             <a
               class="btn btn-ghost btn-lg"
               href="https://github.com/sderosiaux/launchdeck"
@@ -1231,9 +1080,7 @@
             <span id="install-cmd">brew install sderosiaux/tap/launchdeck</span>
             <button class="copy-btn" id="copy-install" type="button">Copy</button>
           </div>
-          <p class="meta">
-            No daemon. No telemetry. No network calls. It shells out to the same tools you would.
-          </p>
+          <p class="meta">Read-only until you say otherwise. Nothing leaves your machine.</p>
         </div>
 
         <div class="screenshot" id="hero-frame">
@@ -1244,7 +1091,7 @@
             </div>
             <img
               src="images/screenshot.png"
-              alt="The Launchdeck service list: launchd and Homebrew services with status, source, scope, pid, RunAtLoad, schedule and plist path, sorted by status."
+              alt="Launchdeck listing every background service on a Mac, with its state, schedule and origin."
               width="1125"
               height="612"
               loading="eager"
@@ -1255,220 +1102,143 @@
         </div>
       </section>
 
-      <!-- ================= WHY (dark) ================= -->
-      <section class="section-dark" id="why">
+      <!-- ================= THE INVISIBLE HALF ================= -->
+      <section class="section-dark" id="invisible">
         <div class="wrap">
-          <div class="why-head">
-            <div>
-              <span class="eyebrow">The problem</span>
-              <h2>macOS service management is fragmented.</h2>
-              <p class="lede" style="margin-top: 16px">
-                Nothing here is broken, exactly. It is just spread across four tools that do not
-                talk to each other, and two of the states that matter most look identical from the
-                outside.
-              </p>
-            </div>
-            <div class="why-stats" aria-label="scope of the problem">
-              <div>
-                <span class="num">4</span><span class="lab">directories</span>
-              </div>
-              <div>
-                <span class="num">3</span><span class="lab">tools</span>
-              </div>
-              <div>
-                <span class="num">1</span><span class="lab">list</span>
-              </div>
-            </div>
+          <div class="dark-head">
+            <span class="eyebrow">The invisible half</span>
+            <h2>You've never seen most of your own machine.</h2>
+            <p class="lede" style="margin-top: 18px">
+              Every install adds something. Almost nothing ever removes it. It builds up for years,
+              and macOS gives you no reason to ever look.
+            </p>
           </div>
 
           <div class="mosaic">
             <div class="tile span-3">
-              <span class="tile-tag">launchctl</span>
-              <h3>Dense output, no configuration</h3>
+              <h3>Ghosts of apps you deleted</h3>
               <p>
-                <code>launchctl print</code> knows runtime state, but it is domain-oriented and says
-                nothing about the plist that defines the job — no schedule, no command, no log
-                paths.
+                You dragged the app to the trash. Its updater stayed behind, still starting on every
+                login, still checking in. Nothing ever cleans these up, and nothing ever tells you
+                they're there.
               </p>
-              <div class="term-out"><span class="d">$</span> launchctl print gui/501 <span class="d">| head</span>
-<span class="d">  services = {</span>
-<span class="d">        1289      -  </span><span class="w">com.projects-widget</span>
-<span class="d">           0      0  </span><span class="w">com.claude.warehouse</span>
-<span class="d">       40098   (pe)  </span><span class="w">com.apple.syncdefaultsd</span></div>
             </div>
 
             <div class="tile span-3">
-              <span class="tile-tag">Ambiguity</span>
-              <h3>Stopped and scheduled look the same</h3>
+              <h3>Something wakes up at 3am</h3>
               <p>
-                A job with no running process may be genuinely idle — or waiting on a
-                <code>StartInterval</code> to fire at 03:00. Same output. Launchdeck separates them,
-                because the difference decides whether you need to act.
+                A job with nothing running right now looks exactly like a job that's finished
+                forever. One of them is going to start again tonight. Launchdeck tells you which is
+                which, and when.
               </p>
-              <div class="term-out"><span class="g">running  </span> com.docker.vmnetd     <span class="d">pid 801</span>
-<span class="b">scheduled</span> com.claude.warehouse  <span class="y">10min</span>
-<span class="b">scheduled</span> com.google.Go…wake    <span class="y">1h</span>
-<span class="d">stopped  </span> org.wireshark.Chmod…  <span class="d">–</span></div>
+              <div class="term-out"><span class="g">running  </span> docker            <span class="d">pid 801</span>
+<span class="b">scheduled</span> backup            <span class="y">nightly 03:00</span>
+<span class="b">scheduled</span> updater           <span class="y">every 1h</span>
+<span class="d">stopped  </span> old-thing         <span class="d">–</span></div>
             </div>
 
             <div class="tile span-2">
-              <span class="tile-tag">plists</span>
-              <h3>Four directories</h3>
+              <h3>It's been failing for weeks</h3>
               <p>
-                <code>~/Library/LaunchAgents</code>, <code>/Library/LaunchAgents</code>,
-                <code>/Library/LaunchDaemons</code> and the Apple-managed trees under
-                <code>/System/Library</code>. Launchdeck reads all of them and parses what is
-                inside.
+                Background jobs fail silently by design. No notification, no red dot — just a thing
+                that quietly stopped doing its job while you assumed it was fine.
               </p>
             </div>
 
             <div class="tile span-2">
-              <span class="tile-tag">brew services</span>
-              <h3>Only half the world</h3>
+              <h3>You killed it. It came back.</h3>
               <p>
-                Convenient, but blind to everything that is not a formula. Launchdeck shows both,
-                and manages each through the tool that owns it — so it never fights Homebrew.
+                Killing the process is not the same as stopping the job. macOS will bring it right
+                back. Launchdeck stops it the way that actually sticks.
               </p>
             </div>
 
             <div class="tile span-2">
-              <span class="tile-tag">Footgun</span>
-              <h3>Killing ≠ unloading</h3>
+              <h3>Nobody knows what's normal</h3>
               <p>
-                <code>kill</code> a process and launchd may bring it straight back. Stopping a
-                scheduled job uses <code>launchctl bootout</code> so it is actually unloaded and
-                will not wake up on its next tick.
+                Hundreds of entries, most of them cryptic reverse-domain names. Which ones are
+                Apple's? Which ones are yours? Which one is that thing you installed once in 2023?
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- ================= STATUS MODEL ================= -->
-      <section id="status">
+      <!-- ================= PROMISES ================= -->
+      <section id="promises">
         <div class="wrap">
-          <span class="eyebrow">Status model</span>
-          <h2>Seven states, told apart.</h2>
-          <p class="lede" style="margin-top: 16px">
-            Most of the value is here. These states are collapsed or invisible in
-            <code>launchctl</code> output, and telling them apart is the difference between "this is
-            fine" and "this has been silently failing for a week".
-          </p>
+          <span class="eyebrow">What you get</span>
+          <h2>Finally, the whole picture.</h2>
 
-          <div class="status-grid">
-            <div class="status-row">
-              <span class="status-key st-running">running</span>
-              <p>launchd has an active PID for the job.</p>
-            </div>
-            <div class="status-row">
-              <span class="status-key st-scheduled">scheduled</span>
-              <p>
-                Loaded, no PID right now, but a schedule is configured. It will wake up on its own.
-              </p>
-            </div>
-            <div class="status-row">
-              <span class="status-key st-stopped">stopped</span>
-              <p>Loaded, no PID, and no known schedule. Genuinely idle.</p>
-            </div>
-            <div class="status-row">
-              <span class="status-key st-unloaded">unloaded</span>
-              <p>The plist exists on disk, but the job is not loaded into launchd at all.</p>
-            </div>
-            <div class="status-row">
-              <span class="status-key st-disabled">disabled</span>
-              <p>launchd marks the job disabled in its domain. It will not start until enabled.</p>
-            </div>
-            <div class="status-row">
-              <span class="status-key st-failed">failed</span>
-              <p>launchd or Homebrew reported a non-zero exit or an error state.</p>
-            </div>
-            <div class="status-row">
-              <span class="status-key st-unknown">unknown</span>
-              <p>The current state could not be classified. Shown as such rather than guessed.</p>
-            </div>
-          </div>
-
-          <div class="callout">
-            Compact schedule summaries make the difference legible at a glance:
-            <code>5min</code>, <code>1h</code>, <code>00:00</code>, <code>Sun 09:00</code> — parsed
-            from <code>StartInterval</code> and <code>StartCalendarInterval</code>, not shown as raw
-            plist dictionaries.
-          </div>
-        </div>
-      </section>
-
-      <!-- ================= CONTROL: provenance + privileges ================= -->
-      <section id="control">
-        <div class="wrap">
-          <span class="eyebrow">Know before you touch</span>
-          <h2>Who installed this, and what will it cost to change it?</h2>
-          <p class="lede" style="margin-top: 16px">
-            Two questions <code>launchctl</code> cannot answer, and both decide whether your change
-            survives the week.
-          </p>
-
-          <div class="split">
-            <div>
-              <h3 style="font-size: 20px; margin-bottom: 12px">Provenance</h3>
-              <p style="color: var(--muted); font-size: 15px; margin-bottom: 20px">
-                Editing a plist that Homebrew owns lasts until the next
-                <code>brew upgrade</code>. Editing one that nix-darwin owns lasts until the next
-                <code>switch</code>. Launchdeck classifies every job from signals it already has —
-                no extra subprocess — and shows the evidence behind the guess.
-              </p>
-              <div class="origin-list">
-                <div class="origin">
-                  <b>homebrew</b><span>manage with <code>brew services</code></span>
-                </div>
-                <div class="origin">
-                  <b>user-plist</b><span>edit the plist or use <code>launchctl</code></span>
-                </div>
-                <div class="origin"><b>nix</b><span>edit the Nix config, then rebuild/switch</span></div>
-                <div class="origin">
-                  <b>mise</b><span>edit <code>mise.toml</code>, then re-run the bootstrap</span>
-                </div>
-                <div class="origin">
-                  <b>vendor-app</b><span>change it from the owning app's settings</span>
-                </div>
-                <div class="origin"><b>system</b><span>Apple-managed; inspect only</span></div>
-                <div class="origin">
-                  <b>runtime-only</b><span>no plist on disk; inspect before changing</span>
-                </div>
+          <div class="promises">
+            <div class="promise reveal">
+              <div class="promise-text">
+                <div class="promise-num">01</div>
+                <h3>Everything, on one screen.</h3>
+                <p>
+                  One list for the whole background world of your Mac — the stuff macOS starts, the
+                  stuff Homebrew starts, the stuff some installer snuck in two years ago. Search it,
+                  filter it, sort it by whatever's bothering you.
+                </p>
+                <p>
+                  The noise from Apple's own services stays hidden until you ask for it. What's left
+                  is the part you can actually do something about.
+                </p>
+              </div>
+              <div class="promise-visual">
+                <div class="term-out"><span class="d">/</span> <span class="w">zoom</span>
+<span class="d">──────────────────────────────────</span>
+<span class="g">running  </span> us.zoom.ZoomDaemon
+<span class="b">scheduled</span> us.zoom.updater      <span class="y">1h</span>
+<span class="d">stopped  </span> us.zoom.updater.log…
+<span class="d">3 of 1049 services</span></div>
               </div>
             </div>
 
-            <div>
-              <h3 style="font-size: 20px; margin-bottom: 12px">Privileges, per action</h3>
-              <p style="color: var(--muted); font-size: 15px; margin-bottom: 20px">
-                launchd scope and file ownership are independent. An agent in
-                <code>/Library/LaunchAgents</code> is root-owned on disk but runs in
-                <em>your</em> <code>gui/&lt;uid&gt;</code> domain — so starting it needs nothing,
-                while deleting its plist needs root. Launchdeck decides per action instead of
-                blocking the whole service.
-              </p>
-              <div class="elev-table">
-                <div class="elev-row head">
-                  <span>Action on a root-owned agent</span><span>sudo</span>
-                </div>
-                <div class="elev-row">
-                  <span>Start, stop, restart</span><span class="tick no">not needed</span>
-                </div>
-                <div class="elev-row">
-                  <span>Enable, disable</span><span class="tick no">not needed</span>
-                </div>
-                <div class="elev-row">
-                  <span>Toggle <code>RunAtLoad</code></span><span class="tick yes">required</span>
-                </div>
-                <div class="elev-row">
-                  <span>Delete the plist</span><span class="tick yes">required</span>
-                </div>
+            <div class="promise reveal">
+              <div class="promise-text">
+                <div class="promise-num">02</div>
+                <h3>Understand it without a search engine.</h3>
+                <p>
+                  Every entry tells you what it actually is: whether it's alive, when it next runs,
+                  what command it fires, where its logs are, and who put it there in the first
+                  place — the app, Homebrew, your package manager, or you.
+                </p>
+                <p>
+                  That last part matters more than it sounds. Change the wrong thing and it just
+                  comes back on the next update.
+                </p>
               </div>
-              <p style="color: var(--muted); font-size: 14px; margin-top: 18px">
-                When root is required, the confirmation prompt shows the command
-                <em>including</em> the <code>sudo</code> prefix, then Launchdeck leaves the TUI so
-                <code>sudo</code> can prompt on the real terminal. The command runs as an argument
-                list, never through a shell, and your password never passes through Launchdeck.
-              </p>
+              <div class="promise-visual">
+                <div class="term-out"><span class="d">status    </span> <span class="b">scheduled</span> <span class="d">·</span> next in 47min
+<span class="d">origin    </span> <span class="w">homebrew</span>
+<span class="d">command   </span> /opt/homebrew/…/redis-server
+<span class="d">logs      </span> /opt/homebrew/var/log/redis.log
+<span class="d">health    </span> <span class="g">clean</span></div>
+              </div>
+            </div>
+
+            <div class="promise reveal">
+              <div class="promise-text">
+                <div class="promise-num">03</div>
+                <h3>Change things without breaking your Mac.</h3>
+                <p>
+                  Start it, stop it, disable it, delete it — but never blind. Launchdeck shows you
+                  the exact command before it runs anything, so you always know what you're about to
+                  do and can walk away.
+                </p>
+                <p>
+                  Apple's own services are locked to read-only. Nothing gets touched by accident.
+                </p>
+              </div>
+              <div class="promise-visual">
+                <div class="term-out"><span class="y">stop</span> <span class="w">us.zoom.updater</span>
+<span class="d">──────────────────────────────────</span>
+<span class="d">will run:</span>
+  <span class="w">launchctl bootout gui/501/us.zoom…</span>
+
+<span class="d">press</span> <span class="g">y</span> <span class="d">to run ·</span> <span class="r">n</span> <span class="d">to cancel</span></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1477,22 +1247,10 @@
       <!-- ================= FEATURES ================= -->
       <section id="features" style="background: var(--bg-soft)">
         <div class="wrap">
-          <span class="eyebrow">Features</span>
-          <h2>Built for real developer machines.</h2>
+          <span class="eyebrow">In the box</span>
+          <h2>Small tool. No surprises.</h2>
 
           <div class="features">
-            <div class="feat">
-              <div class="feat-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M2 4h12M2 8h12M2 12h8" stroke-linecap="round" />
-                </svg>
-              </div>
-              <h3>One unified list</h3>
-              <p>
-                launchd jobs and Homebrew services side by side, enriched with parsed plist
-                configuration and runtime state from <code>launchctl</code>.
-              </p>
-            </div>
             <div class="feat">
               <div class="feat-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -1500,10 +1258,10 @@
                   <path d="M10.5 10.5 14 14" stroke-linecap="round" />
                 </svg>
               </div>
-              <h3>Type-to-search and filters</h3>
+              <h3>Just start typing</h3>
               <p>
-                Filter by source and status, show warnings only, toggle Apple/system services, and
-                sort by name, status, source or health.
+                Search jumps in as soon as you type. Filters and sorting are one key each — no menus
+                to learn.
               </p>
             </div>
             <div class="feat">
@@ -1513,10 +1271,10 @@
                   <path d="M5 6h6M5 9h4" stroke-linecap="round" />
                 </svg>
               </div>
-              <h3>Logs where you decide</h3>
+              <h3>Logs, right there</h3>
               <p>
-                Scrollable <code>stdout</code> and <code>stderr</code> from the paths the plist
-                declares, plus a unified <code>os_log</code> stream for the job.
+                Stop hunting for log files. Open any service and read its output without leaving the
+                app.
               </p>
             </div>
             <div class="feat">
@@ -1525,10 +1283,10 @@
                   <path d="M8 1.8 13.4 4v4c0 3.2-2.2 5.4-5.4 6.2C4.8 13.4 2.6 11.2 2.6 8V4L8 1.8Z" />
                 </svg>
               </div>
-              <h3>Guarded actions</h3>
+              <h3>Nothing happens silently</h3>
               <p>
-                Every action shows the exact command and waits for confirmation.
-                <code>/System/Library</code> is inspect-only; destructive actions always confirm.
+                Every change is shown as a command and waits for your confirmation. Destructive ones
+                ask twice.
               </p>
             </div>
             <div class="feat">
@@ -1537,10 +1295,10 @@
                   <path d="M8 3.2v9.6M3.2 8h9.6" stroke-linecap="round" />
                 </svg>
               </div>
-              <h3>Create agents without XML</h3>
+              <h3>Schedule your own</h3>
               <p>
-                A form for the common plist fields — arguments, working directory, env, log paths,
-                <code>RunAtLoad</code>, intervals — validated and linted before it is written.
+                Want something to run every hour, or at login? Fill in a short form. No XML, no
+                man pages.
               </p>
             </div>
             <div class="feat">
@@ -1550,25 +1308,35 @@
                   <path d="M13.6 2.4v3.2h-3.2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </div>
-              <h3>Background refresh</h3>
+              <h3>Always current</h3>
               <p>
-                The inventory refreshes without blocking the UI, and keeps your selection stable by
-                service identity rather than by row index.
+                The list refreshes itself while you work, and keeps your place. Start something and
+                watch it come up.
+              </p>
+            </div>
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M2 4h12M2 8h12M2 12h8" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h3>Scriptable too</h3>
+              <p>
+                Not in the mood for a UI? The same inventory prints straight to your terminal, ready
+                to pipe.
               </p>
             </div>
           </div>
 
           <div class="keys">
             <span class="key"><kbd>/</kbd> search</span>
-            <span class="key"><kbd>↵</kbd> detail</span>
+            <span class="key"><kbd>↵</kbd> details</span>
             <span class="key"><kbd>L</kbd> logs</span>
             <span class="key"><kbd>S</kbd> start</span>
             <span class="key"><kbd>X</kbd> stop</span>
             <span class="key"><kbd>R</kbd> restart</span>
-            <span class="key"><kbd>T</kbd> enable / disable</span>
-            <span class="key"><kbd>E</kbd> edit plist</span>
             <span class="key"><kbd>D</kbd> delete</span>
-            <span class="key"><kbd>N</kbd> new agent</span>
+            <span class="key"><kbd>N</kbd> new job</span>
             <span class="key"><kbd>?</kbd> help</span>
           </div>
         </div>
@@ -1578,29 +1346,22 @@
       <section id="install">
         <div class="wrap">
           <span class="eyebrow">Install</span>
-          <h2>Running in under a minute.</h2>
+          <h2>One command. Then look around.</h2>
 
           <div class="timeline">
             <div class="tline-item">
               <span class="marker">1</span>
               <div>
-                <h3>Install</h3>
-                <p>Via Homebrew, which is the shortest path and keeps it updated:</p>
+                <h3>Install it</h3>
                 <pre><code>brew install sderosiaux/tap/launchdeck</code></pre>
                 <p class="alt-install">
-                  Without Homebrew, the installer script writes to <code>~/.local/bin</code>:
-                </p>
-                <pre><code>curl -fsSL https://raw.githubusercontent.com/sderosiaux/launchdeck/main/scripts/install.sh | sh</code></pre>
-                <p class="alt-install">
-                  Or from source, if you have a Rust toolchain:
-                  <code>cargo install launchdeck</code>. Prebuilt archives for Apple Silicon and
-                  Intel are on the
+                  No Homebrew? There's a one-line installer and prebuilt binaries on the
                   <a
                     href="https://github.com/sderosiaux/launchdeck/releases/latest"
                     target="_blank"
                     rel="noopener"
                     >releases page</a
-                  >.
+                  >, or <code>cargo install launchdeck</code> if you have Rust.
                 </p>
               </div>
             </div>
@@ -1608,17 +1369,11 @@
             <div class="tline-item">
               <span class="marker">2</span>
               <div>
-                <h3>Look before you touch</h3>
-                <p>
-                  Launchdeck opens on the services you are most likely to care about, hiding the
-                  Apple/system noise until you ask for it with <kbd>A</kbd>. Nothing is modified
-                  until you confirm an action.
-                </p>
+                <h3>Look</h3>
                 <pre><code>launchdeck</code></pre>
-                <p class="alt-install">
-                  For scripts and pipes, the same inventory without the TUI:
-                  <code>launchdeck list</code>, or <code>launchdeck list --all</code> to include
-                  Apple and system services.
+                <p>
+                  You'll probably find something you forgot about in the first thirty seconds.
+                  Nothing changes until you decide it should.
                 </p>
               </div>
             </div>
@@ -1626,12 +1381,10 @@
             <div class="tline-item">
               <span class="marker">3</span>
               <div>
-                <h3>Act, with the command in front of you</h3>
+                <h3>Clean house</h3>
                 <p>
-                  Press <kbd>S</kbd>, <kbd>X</kbd> or <kbd>R</kbd> and Launchdeck shows you the
-                  exact <code>launchctl</code> or <code>brew services</code> invocation it is about
-                  to run. Press <kbd>y</kbd> to confirm, <kbd>n</kbd> to walk away. If the action
-                  needs root, the <code>sudo</code> prefix is right there in the prompt.
+                  Stop what shouldn't be running. Delete what shouldn't be there. Every action shows
+                  you the command first, so you're never guessing.
                 </p>
               </div>
             </div>
@@ -1643,78 +1396,84 @@
       <section id="faq" style="background: var(--bg-soft)">
         <div class="wrap">
           <span class="eyebrow">FAQ</span>
-          <h2>Questions worth asking.</h2>
+          <h2>Reasonable questions.</h2>
 
           <div class="faq-list">
             <details class="faq-item">
-              <summary>How is this different from just using launchctl?</summary>
+              <summary>What does it actually show me?</summary>
               <div class="answer">
-                <code>launchctl</code> knows runtime state, but its output is dense, domain-oriented
-                and says nothing about the plist that defines the job. Launchdeck joins
-                <code>launchctl</code> state, Homebrew metadata and parsed plist configuration into
-                one list, so the schedule, the command, the log paths and the runtime status are all
-                in front of you at once — and it still runs <code>launchctl</code> underneath, so
-                there is no second source of truth.
-              </div>
-            </details>
-            <details class="faq-item">
-              <summary>Does Launchdeck need root?</summary>
-              <div class="answer">
-                Only for what genuinely requires it, decided per action rather than per service.
-                Starting an agent from <code>/Library/LaunchAgents</code> needs nothing because it
-                runs in your own <code>gui</code> domain; deleting that same root-owned plist needs
-                root. When root is required, the command is prefixed with <code>sudo</code> and
-                shown in full, then Launchdeck leaves the TUI so <code>sudo</code> prompts on the
-                real terminal. The password never passes through Launchdeck, and commands are always
-                executed as an argument list rather than a shell string.
+                Everything running in the background on your Mac, in one list: what's alive, what's
+                idle, what's scheduled to wake up later, what's been failing, and what's installed
+                but not currently loaded. The things macOS starts and the things Homebrew starts,
+                together, which is not something you can get anywhere else.
               </div>
             </details>
             <details class="faq-item">
               <summary>Will it change anything without asking?</summary>
               <div class="answer">
-                No. Every action shows the exact command before it runs and waits for confirmation.
-                Services under <code>/System/Library</code> are inspect-only, vendor and
-                runtime-only jobs are blocked unless they can be classified safely, and destructive
-                actions like deleting a plist always confirm.
+                Never. Launchdeck is read-only until you confirm something. Every action shows you
+                the exact command before it runs, Apple's own services are locked to read-only, and
+                anything destructive asks twice.
               </div>
             </details>
             <details class="faq-item">
-              <summary>What exactly is the "scheduled" state?</summary>
+              <summary>Is this safe on a work machine?</summary>
               <div class="answer">
-                A job that is loaded into launchd, has no running process right now, but has a
-                <code>StartInterval</code> or <code>StartCalendarInterval</code> configured. In
-                <code>launchctl</code> output it is indistinguishable from a stopped job — which is
-                why a service you assume is dead can wake up at 03:00. Stopping a scheduled job uses
-                <code>launchctl bootout</code>, so it is genuinely unloaded rather than merely
-                killed.
+                It makes no network calls and collects no telemetry — it just runs the same standard
+                macOS commands you'd run by hand, and shows you each one first. It's free and open
+                source, so you don't have to take that on trust.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Does it need my password?</summary>
+              <div class="answer">
+                Only for the handful of things that genuinely require admin rights, and it tells you
+                which ones before you commit. When that happens, macOS prompts you directly — your
+                password never goes through Launchdeck.
               </div>
             </details>
             <details class="faq-item">
               <summary>Do I need Homebrew?</summary>
               <div class="answer">
-                No. Homebrew is optional. With it, <code>brew services</code> entries appear in the
-                same list and are managed through <code>brew</code> so Launchdeck never fights the
-                tool that owns them. Without it, you simply get the launchd side of the world.
-              </div>
-            </details>
-            <details class="faq-item">
-              <summary>Is it safe to run on a work machine?</summary>
-              <div class="answer">
-                Launchdeck is read-only until you confirm an action. It shells out to
-                <code>launchctl</code>, <code>brew</code>, <code>plutil</code> and <code>log</code>,
-                makes no network calls, and collects no telemetry. It is dual-licensed MIT or
-                Apache-2.0 and the source is on GitHub — the confirmation prompt exists precisely so
-                you never have to take its word for what it is about to do.
+                No. If you have it, your Homebrew services show up in the same list and are managed
+                through Homebrew itself, so nothing ends up out of sync. If you don't, you just see
+                everything else.
               </div>
             </details>
             <details class="faq-item">
               <summary>Linux or Windows?</summary>
               <div class="answer">
-                No. Launchdeck is built around <code>launchd</code>, which is macOS-specific. There
-                is no meaningful way to port the model to systemd without it becoming a different
-                tool.
+                No. Launchdeck is built around the way macOS runs background work. Porting it
+                elsewhere would make it a different tool.
               </div>
             </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CLOSER ================= -->
+      <section class="closer">
+        <div class="wrap">
+          <h2>Go see what's on your machine.</h2>
+          <p>
+            It takes a minute to install and you'll almost certainly find something you didn't know
+            was there.
+          </p>
+          <div class="ctas">
+            <a
+              class="btn btn-primary btn-lg"
+              href="https://github.com/sderosiaux/launchdeck"
+              target="_blank"
+              rel="noopener"
+              >Get Launchdeck</a
+            >
+            <a
+              class="btn btn-ghost btn-lg"
+              href="https://github.com/sderosiaux/launchdeck/releases/latest"
+              target="_blank"
+              rel="noopener"
+              >Releases</a
+            >
           </div>
         </div>
       </section>
@@ -1724,8 +1483,9 @@
       <div class="wrap foot">
         <div>
           <strong style="color: var(--ink)">Launchdeck</strong> — built by
-          <a href="https://github.com/sderosiaux" target="_blank" rel="noopener">Stéphane Derosiaux</a
-          >. MIT or Apache-2.0.
+          <a href="https://github.com/sderosiaux" target="_blank" rel="noopener"
+            >Stéphane Derosiaux</a
+          >. Free and open source.
         </div>
         <div class="foot-links">
           <a href="https://github.com/sderosiaux/launchdeck" target="_blank" rel="noopener">GitHub</a>
@@ -1736,10 +1496,7 @@
             >Releases</a
           >
           <a href="https://crates.io/crates/launchdeck" target="_blank" rel="noopener">crates.io</a>
-          <a
-            href="https://github.com/sderosiaux/launchdeck/issues"
-            target="_blank"
-            rel="noopener"
+          <a href="https://github.com/sderosiaux/launchdeck/issues" target="_blank" rel="noopener"
             >Report an issue</a
           >
         </div>
@@ -1747,13 +1504,11 @@
     </footer>
 
     <script>
-      // Sticky nav hairline once scrolled.
       const nav = document.getElementById("nav");
       const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 4);
       document.addEventListener("scroll", onScroll, { passive: true });
       onScroll();
 
-      // Star count, best effort: the page must not depend on it.
       fetch("https://api.github.com/repos/sderosiaux/launchdeck")
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
@@ -1767,7 +1522,6 @@
         })
         .catch(() => {});
 
-      // Copy the install one-liner.
       const copyBtn = document.getElementById("copy-install");
       copyBtn?.addEventListener("click", async () => {
         const cmd = document.getElementById("install-cmd")?.textContent?.trim();
@@ -1785,7 +1539,6 @@
         }
       });
 
-      // Reveal on scroll.
       const io = new IntersectionObserver(
         (entries) => {
           entries.forEach((e) => {
