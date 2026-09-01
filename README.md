@@ -84,6 +84,8 @@ launchdeck list
 launchdeck list --all
 ```
 
+`launchdeck --version` prints the version, `launchdeck --help` the usage summary.
+
 ## Features
 
 - One service list for `launchd` jobs and Homebrew services.
@@ -91,7 +93,8 @@ launchdeck list --all
 - A distinct `scheduled` state for loaded jobs that are not running now but will wake up later.
 - Compact schedule summaries such as `5min`, `1h`, `00:00`, and `Sun 09:00`.
 - Type-to-search, source/status filters, warnings-only view, Apple/system toggle, and practical sorting.
-- Detail modal for status, scope, safety level, command, plist path, schedule, logs, and health warnings.
+- Provenance for every job: which tool installed it (`homebrew`, `user-plist`, `mise`, `nix`, `vendor-app`, `system`, `runtime-only`), with the evidence behind the guess.
+- Detail modal for status, scope, safety level, origin, elevation, command, plist path, schedule, logs, and health warnings.
 - Scrollable stdout/stderr log view from configured `StandardOutPath` and `StandardErrorPath`.
 - Confirmed actions for start, stop, restart/load, enable/disable, `RunAtLoad`, edit plist, and delete plist.
 - User LaunchAgent creation for common plist fields without hand-writing XML.
@@ -183,9 +186,19 @@ Launchdeck is conservative by default:
 - Homebrew services are managed through `brew services`.
 - User-owned launchd jobs are managed through `launchctl`.
 - Services under `/System/Library` are inspect-only.
-- Admin-required services are blocked until sudo handling is implemented.
 - Vendor/runtime services are blocked unless they can be classified safely.
 - Destructive actions, including delete, always require confirmation.
+
+Privileges are decided per action, not per service, because launchd scope and file
+ownership are independent. An agent installed in `/Library/LaunchAgents` is
+root-owned on disk but runs in your own `gui/<uid>` domain: starting and stopping
+it needs nothing, while editing or deleting its plist needs root. The detail view
+shows exactly which axes need elevation.
+
+When an action does need root, Launchdeck prefixes it with `sudo`, shows the full
+command including that prefix, then leaves the TUI so `sudo` can prompt on the real
+terminal. The password never passes through Launchdeck, and the command is always
+executed as an argument list, never through a shell.
 
 ## Create Form
 
@@ -237,4 +250,4 @@ The release workflow builds macOS archives for Apple Silicon and Intel, publishe
 
 ## Project Status
 
-Launchdeck is early software. It is already useful for inventory, inspection, filtering, navigable logs, guarded lifecycle actions, and creating user LaunchAgents. Sudo-backed admin actions are not implemented yet.
+Launchdeck is early software. It is already useful for inventory, inspection, filtering, navigable logs, guarded lifecycle actions, and creating user LaunchAgents.

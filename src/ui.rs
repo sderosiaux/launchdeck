@@ -1,4 +1,4 @@
-use crate::app::{App, DetailItem, ViewMode};
+use crate::app::{App, DetailItem, ViewMode, detail_item_value};
 use crate::create::{CreateField, CreateServiceForm};
 use crate::model::{Service, ServiceStatus};
 use ratatui::Frame;
@@ -9,6 +9,8 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap}
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+
+const TAIL_WINDOW_BYTES: u64 = 32 * 1024;
 
 pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     let area = frame.area();
@@ -248,70 +250,24 @@ fn sync_detail_viewport(app: &mut App, visible_rows: usize) {
 }
 
 fn detail_item_line<'a>(service: &Service, item: DetailItem, selected: bool) -> Line<'a> {
-    let value = match item {
-        DetailItem::Status => service.status.to_string(),
-        DetailItem::Source => service.source.to_string(),
-        DetailItem::Domain => service.domain.clone(),
-        DetailItem::Scope => service.scope.label().to_string(),
-        DetailItem::Safety => service.safety_level.to_string(),
-        DetailItem::Plist => service
-            .plist_path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        DetailItem::BrewFormula => service.brew_formula.as_deref().unwrap_or("-").to_string(),
-        DetailItem::BrewStatus => service.brew_status.as_deref().unwrap_or("-").to_string(),
-        DetailItem::Command => service.config.command_preview(),
-        DetailItem::WorkingDirectory => service
-            .config
-            .working_directory
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::Stdout => service
-            .config
-            .stdout_path
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::Stderr => service
-            .config
-            .stderr_path
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::RunAtLoad => service
-            .config
-            .run_at_load
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        DetailItem::KeepAlive => service
-            .config
-            .keep_alive
-            .as_deref()
-            .unwrap_or("-")
-            .to_string(),
-        DetailItem::StartInterval => service
-            .config
-            .start_interval
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        DetailItem::Schedule => service.config.schedule_summary(),
-        DetailItem::Health => {
-            if service.health.is_empty() {
-                "clean".to_string()
-            } else {
-                service.health.join(" | ")
-            }
-        }
-    };
+    // Same source as the copy action, so what you read is what you copy.
+    let value = detail_item_value(service, item);
 
     let value_style = match item {
         DetailItem::Status => status_style(&service.status),
         DetailItem::Source | DetailItem::BrewFormula | DetailItem::BrewStatus => {
             Style::default().fg(Color::Blue)
         }
-        DetailItem::Domain | DetailItem::Scope => Style::default().fg(Color::Magenta),
+        DetailItem::Domain | DetailItem::Scope | DetailItem::Origin => {
+            Style::default().fg(Color::Magenta)
+        }
+        DetailItem::Elevation => {
+            if service.elevation == crate::model::ElevationNeeds::none() {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Yellow)
+            }
+        }
         DetailItem::Safety
         | DetailItem::RunAtLoad
         | DetailItem::KeepAlive
@@ -828,10 +784,19 @@ fn log_line<'a>(line: &str) -> Line<'a> {
 fn tail_file(path: &str, max_lines: usize) -> std::io::Result<Vec<String>> {
     let mut file = File::open(Path::new(path))?;
     let len = file.metadata()?.len();
-    let start = len.saturating_sub(32 * 1024);
+    let start = len.saturating_sub(TAIL_WINDOW_BYTES);
     file.seek(SeekFrom::Start(start))?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
+    // Read raw bytes: the seek offset can land mid-codepoint, and service logs are
+    // not guaranteed to be UTF-8 at all. Lossy decoding keeps the view usable.
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    let content = String::from_utf8_lossy(&buffer);
+    // Drop the first line: seeking to a byte offset almost always cuts one in half.
+    let content = if start > 0 {
+        content.split_once('\n').map(|(_, rest)| rest).unwrap_or("")
+    } else {
+        content.as_ref()
+    };
     Ok(content
         .lines()
         .rev()

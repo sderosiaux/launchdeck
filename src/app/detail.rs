@@ -8,6 +8,18 @@ pub fn detail_item_value(service: &Service, item: DetailItem) -> String {
         DetailItem::Domain => service.domain.clone(),
         DetailItem::Scope => service.scope.label().to_string(),
         DetailItem::Safety => service.safety_level.to_string(),
+        DetailItem::Origin => {
+            let mut value = format!(
+                "{} — {}",
+                service.origin.summary(),
+                service.origin.kind.change_hint()
+            );
+            if let Some(evidence) = service.origin.evidence.first() {
+                value.push_str(&format!(" [{evidence}]"));
+            }
+            value
+        }
+        DetailItem::Elevation => service.elevation.summary(),
         DetailItem::Plist => service
             .plist_path
             .as_ref()

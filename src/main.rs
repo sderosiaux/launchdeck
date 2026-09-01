@@ -18,6 +18,11 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if args.iter().any(|arg| arg == "--version" || arg == "-V") {
+        println!("launchdeck {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     if is_list_command(&args) {
         let show_apple = args.iter().any(|arg| arg == "--all" || arg == "-a");
         if let Err(err) = print_inventory(discovery::load_inventory(), show_apple)
@@ -44,6 +49,7 @@ fn print_help() {
     println!("  launchdeck list --all   print all discovered services, including Apple/system");
     println!("  launchdeck --list       alias for launchdeck list");
     println!("  launchdeck --help       show this help");
+    println!("  launchdeck --version    show the version");
 }
 
 fn print_inventory(inventory: Inventory, show_apple: bool) -> io::Result<()> {
@@ -51,8 +57,8 @@ fn print_inventory(inventory: Inventory, show_apple: bool) -> io::Result<()> {
     let mut stdout = stdout.lock();
     writeln!(
         stdout,
-        "{:<10} {:<7} {:<13} {:<8} {:<6} {:<24} NAME",
-        "STATUS", "SOURCE", "SCOPE", "PID", "LOAD", "SCHEDULE"
+        "{:<10} {:<7} {:<13} {:<13} {:<8} {:<6} {:<24} NAME",
+        "STATUS", "SOURCE", "SCOPE", "ORIGIN", "PID", "LOAD", "SCHEDULE"
     )?;
     for service in inventory.services {
         if !show_apple && is_apple_service(&service) {
@@ -60,10 +66,13 @@ fn print_inventory(inventory: Inventory, show_apple: bool) -> io::Result<()> {
         }
         writeln!(
             stdout,
-            "{:<10} {:<7} {:<13} {:<8} {:<6} {:<24} {}",
-            service.status,
-            service.source,
+            "{:<10} {:<7} {:<13} {:<13} {:<8} {:<6} {:<24} {}",
+            // `to_string` first: width specifiers are ignored by Display impls that
+            // write straight to the formatter instead of going through `pad`.
+            service.status.to_string(),
+            service.source.to_string(),
             service.scope.label(),
+            service.origin.kind.label(),
             service
                 .pid
                 .map(|pid| pid.to_string())

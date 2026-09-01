@@ -44,6 +44,30 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
 
+  crates-io:
+    name: Publish to crates.io
+    # macOS runner: `cargo publish` verifies by building, and this crate targets macOS.
+    runs-on: macos-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "CARGO_REGISTRY_TOKEN is not configured; skipping crates.io publish."
+            exit 0
+          fi
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          if [ "v${version}" != "${{ github.ref_name }}" ]; then
+            echo "Cargo.toml is at ${version} but the tag is ${{ github.ref_name }}." >&2
+            exit 1
+          fi
+          cargo publish --locked
+
   release:
     name: Publish GitHub release
     runs-on: ubuntu-latest

@@ -2,28 +2,33 @@ mod detail;
 mod keys;
 mod unified;
 
-use crate::actions::{self, ActionKind, ActionPlan};
+use crate::actions::{self, ActionKind, ActionPlan, ActionResult};
 use crate::create::{self, CreateServiceForm};
 use crate::discovery;
 use crate::model::{Inventory, Service, ServiceSource, ServiceStatus};
 use crate::oslog::LogWindow;
 use crate::ui;
 use anyhow::{Context, Result};
+use crossterm::cursor;
 use crossterm::event::{self, Event};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use detail::detail_item_value;
+pub use detail::detail_item_value;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(3);
+/// A full inventory pass is ~1s of subprocesses. If nothing came back well past
+/// that, the worker is gone and we should be allowed to start another one.
+const REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ViewMode {
@@ -39,6 +44,8 @@ pub enum DetailItem {
     Domain,
     Scope,
     Safety,
+    Origin,
+    Elevation,
     Plist,
     BrewFormula,
     BrewStatus,
@@ -61,6 +68,8 @@ impl DetailItem {
             Self::Domain => "domain",
             Self::Scope => "scope",
             Self::Safety => "safety",
+            Self::Origin => "origin",
+            Self::Elevation => "elevation",
             Self::Plist => "plist",
             Self::BrewFormula => "brew formula",
             Self::BrewStatus => "brew status",
@@ -77,12 +86,14 @@ impl DetailItem {
     }
 }
 
-const DETAIL_ITEMS: [DetailItem; 17] = [
+const DETAIL_ITEMS: [DetailItem; 19] = [
     DetailItem::Status,
     DetailItem::Source,
     DetailItem::Domain,
     DetailItem::Scope,
     DetailItem::Safety,
+    DetailItem::Origin,
+    DetailItem::Elevation,
     DetailItem::Plist,
     DetailItem::BrewFormula,
     DetailItem::BrewStatus,
@@ -238,6 +249,9 @@ pub struct App {
     pub mode: ViewMode,
     pub show_help: bool,
     pub pending_action: Option<ActionPlan>,
+    /// Confirmed and waiting for `run_loop` to dispatch it.
+    pub armed_action: Option<ActionPlan>,
+    pub action_in_flight: bool,
     pub create_form: Option<CreateServiceForm>,
     pub refresh_requested: bool,
     pub status_line: String,
@@ -270,6 +284,8 @@ impl App {
             mode: ViewMode::Overview,
             show_help: false,
             pending_action: None,
+            armed_action: None,
+            action_in_flight: false,
             create_form: None,
             refresh_requested: false,
             status_line: "inventory ready; actions require confirmation".to_string(),
@@ -543,8 +559,11 @@ impl App {
         self.status_line = "action cancelled".to_string();
     }
 
+    /// Arms the plan; `run_loop` dispatches it. Unprivileged commands go to a
+    /// worker thread so a slow `brew services` cannot freeze the UI, while an
+    /// elevated one has to run inline because `sudo` needs the real terminal.
     fn confirm_action(&mut self) {
-        let Some(plan) = self.pending_action.clone() else {
+        let Some(plan) = self.pending_action.take() else {
             return;
         };
 
@@ -557,15 +576,29 @@ impl App {
             return;
         }
 
-        let command = plan.command_display();
-        let result = actions::execute(&plan);
-        self.pending_action = None;
-        self.refresh_requested = true;
-        if result.success {
-            self.status_line = format!("ran `{command}`: {}", result.message);
-        } else {
-            self.status_line = format!("failed `{command}`: {}", result.message);
+        if self.action_in_flight {
+            self.pending_action = Some(plan);
+            self.status_line = "another action is still running".to_string();
+            return;
         }
+
+        self.status_line = if plan.needs_sudo() {
+            format!("suspending to run `{}`...", plan.command_display())
+        } else {
+            format!("running `{}`...", plan.command_display())
+        };
+        self.armed_action = Some(plan);
+        self.action_in_flight = true;
+    }
+
+    fn apply_action_result(&mut self, command: String, result: ActionResult) {
+        self.action_in_flight = false;
+        self.refresh_requested = true;
+        self.status_line = if result.success {
+            format!("ran `{command}`: {}", result.message)
+        } else {
+            format!("failed `{command}`: {}", result.message)
+        };
     }
 
     fn open_create_form(&mut self) {
@@ -784,27 +817,54 @@ pub fn run() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
+    install_panic_hook();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run_loop(&mut terminal, &mut app);
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    restore_terminal();
     terminal.show_cursor()?;
 
     result
 }
 
+/// Leave the alternate screen and raw mode. Safe to call twice: crossterm treats
+/// both as idempotent, and a panic must never leave the user's shell unusable.
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show);
+}
+
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore_terminal();
+        previous(info);
+    }));
+}
+
 fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> Result<()> {
     let (refresh_tx, refresh_rx) = mpsc::channel();
     let (unified_tx, unified_rx) = mpsc::channel();
+    let (action_tx, action_rx) = mpsc::channel::<(String, ActionResult)>();
+    let brew_cache = discovery::new_brew_cache();
     let mut refresh_in_progress = false;
+    let mut refresh_started = Instant::now();
 
     loop {
         if let Some(inventory) = receive_refresh(&refresh_rx) {
             refresh_in_progress = false;
             app.apply_inventory(inventory);
+        } else if refresh_in_progress && refresh_started.elapsed() >= REFRESH_TIMEOUT {
+            // A worker that panicked never sends, and without this the flag would
+            // stay set and background refresh would be dead for the whole session.
+            refresh_in_progress = false;
+            app.status_line = "background refresh gave up; retrying".to_string();
+        }
+
+        while let Ok((command, result)) = action_rx.try_recv() {
+            app.apply_action_result(command, result);
         }
 
         if let Some(result) = unified::drain_unified(&unified_rx) {
@@ -816,14 +876,26 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App
             unified::spawn_unified_fetch(app, &unified_tx);
         }
 
+        if let Some(plan) = app.armed_action.take() {
+            if plan.needs_sudo() {
+                let (command, result) = run_elevated(terminal, &plan)?;
+                app.apply_action_result(command, result);
+            } else {
+                spawn_action(plan, action_tx.clone());
+            }
+        }
+
         terminal.draw(|frame| ui::draw(frame, app))?;
 
         if should_refresh(app, refresh_in_progress) {
+            // An explicit refresh follows an action the user just ran, so the brew
+            // snapshot must not be served from cache.
+            let force_brew = app.refresh_requested;
             app.refresh_requested = false;
             app.last_refresh = Instant::now();
-            app.status_line = "refreshing in background...".to_string();
+            refresh_started = Instant::now();
             refresh_in_progress = true;
-            spawn_refresh(refresh_tx.clone());
+            spawn_refresh(refresh_tx.clone(), Arc::clone(&brew_cache), force_brew);
         }
 
         if !event::poll(Duration::from_millis(200))? {
@@ -840,6 +912,42 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App
     }
 
     Ok(())
+}
+
+/// Hand the terminal back to the shell so `sudo` can prompt on it, run the
+/// command, then rebuild the TUI. The pause afterwards keeps whatever sudo or the
+/// command printed readable instead of flashing past.
+fn run_elevated(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    plan: &ActionPlan,
+) -> Result<(String, ActionResult)> {
+    let command = plan.command_display();
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
+
+    println!("\nlaunchdeck: {command}\n");
+    let _ = io::stdout().flush();
+    let result = actions::execute_elevated(plan);
+    println!("\n{}", result.message);
+    print!("press enter to return to launchdeck ");
+    let _ = io::stdout().flush();
+    let mut discard = String::new();
+    let _ = io::stdin().read_line(&mut discard);
+
+    enable_raw_mode()?;
+    execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+    terminal.clear()?;
+
+    Ok((command, result))
+}
+
+fn spawn_action(plan: ActionPlan, action_tx: Sender<(String, ActionResult)>) {
+    let command = plan.command_display();
+    thread::spawn(move || {
+        let result = actions::execute(&plan);
+        let _ = action_tx.send((command, result));
+    });
 }
 
 fn receive_refresh(refresh_rx: &Receiver<Inventory>) -> Option<Inventory> {
@@ -862,9 +970,9 @@ fn should_refresh(app: &App, refresh_in_progress: bool) -> bool {
     app.refresh_requested || app.last_refresh.elapsed() >= REFRESH_INTERVAL
 }
 
-fn spawn_refresh(refresh_tx: Sender<Inventory>) {
+fn spawn_refresh(refresh_tx: Sender<Inventory>, brew_cache: discovery::BrewCache, force: bool) {
     thread::spawn(move || {
-        let inventory = discovery::load_inventory();
+        let inventory = discovery::load_inventory_with(Some(&brew_cache), force);
         let _ = refresh_tx.send(inventory);
     });
 }
@@ -889,7 +997,7 @@ fn copy_to_clipboard(value: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{LaunchConfig, SafetyLevel, ServiceScope};
+    use crate::model::{ElevationNeeds, LaunchConfig, Origin, SafetyLevel, ServiceScope};
     use std::path::PathBuf;
 
     fn service(label: &str, status: ServiceStatus) -> Service {
@@ -914,6 +1022,8 @@ mod tests {
             brew_formula: None,
             brew_status: None,
             safety_level: SafetyLevel::UserWritable,
+            elevation: ElevationNeeds::none(),
+            origin: Origin::unknown(),
             health: Vec::new(),
         }
     }
@@ -922,6 +1032,62 @@ mod tests {
         Inventory {
             services,
             warnings: Vec::new(),
+        }
+    }
+
+    fn render(app: &mut App, width: u16, height: u16) -> String {
+        let backend = ratatui::backend::TestBackend::new(width, height);
+        // TestBackend construction is `Infallible`, so this binding is irrefutable.
+        let Ok(mut terminal) = Terminal::new(backend);
+        if let Err(err) = terminal.draw(|frame| ui::draw(frame, app)) {
+            panic!("draw failed at {width}x{height}: {err}");
+        }
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
+    }
+
+    #[test]
+    fn detail_view_shows_origin_and_elevation() {
+        let mut service = service("com.example.demo", ServiceStatus::Running);
+        service.origin = Origin {
+            kind: crate::model::Provenance::Nix,
+            confidence: crate::model::Confidence::High,
+            evidence: vec!["command resolves into /nix/store".to_string()],
+        };
+        service.elevation = ElevationNeeds {
+            runtime: true,
+            plist_write: true,
+            plist_remove: true,
+        };
+        let mut app = App::new(inventory(vec![service]));
+        app.open_detail();
+
+        let rendered = render(&mut app, 200, 40);
+
+        assert!(rendered.contains("nix (high)"));
+        assert!(rendered.contains("sudo for launchctl, plist edit, plist delete"));
+    }
+
+    #[test]
+    fn every_view_survives_a_terminal_too_small_to_hold_it() {
+        let mut app = App::new(inventory(vec![service(
+            "com.example.demo",
+            ServiceStatus::Running,
+        )]));
+
+        for size in [(1, 1), (8, 3), (20, 5), (40, 10)] {
+            app.mode = ViewMode::Overview;
+            render(&mut app, size.0, size.1);
+            app.open_detail();
+            app.detail_selected = DETAIL_ITEMS.len() - 1;
+            render(&mut app, size.0, size.1);
+            app.open_logs(LogStream::Stdout);
+            render(&mut app, size.0, size.1);
         }
     }
 
