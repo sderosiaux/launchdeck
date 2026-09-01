@@ -243,7 +243,13 @@ pub fn write_user_agent(form: &CreateServiceForm) -> Result<CreateOutcome> {
         .to_file_xml(&path)
         .with_context(|| format!("write {}", path.display()))?;
 
-    lint_plist(&path)?;
+    // A rejected plist must not survive: it would be discovered as a broken
+    // service on the next refresh, and the "already exists" guard above would then
+    // block the user from retrying with the same label.
+    if let Err(err) = lint_plist(&path) {
+        let _ = fs::remove_file(&path);
+        return Err(err);
+    }
 
     let mut steps = Vec::new();
     if form.bootstrap_now {
@@ -477,6 +483,23 @@ fn bool_marker(value: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `current_value_mut` answers `unreachable!()` for the boolean fields and
+    /// relies entirely on `editable()` to keep them out. The two lists are written
+    /// separately, so typing into a field they disagree on would panic the TUI.
+    #[test]
+    fn typing_into_any_field_never_hits_the_unreachable_arm() {
+        let mut form = CreateServiceForm::new();
+
+        for index in 0..FIELDS.len() {
+            for _ in 0..index {
+                form.next();
+            }
+            form.insert('x');
+            form.backspace();
+            form = CreateServiceForm::new();
+        }
+    }
 
     fn form_with_arguments(arguments: &str) -> CreateServiceForm {
         let mut form = CreateServiceForm::new();
