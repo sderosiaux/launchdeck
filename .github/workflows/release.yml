@@ -116,7 +116,7 @@ jobs:
           mkdir -p Formula
           cat > Formula/launchdeck.rb <<EOF
           class Launchdeck < Formula
-            desc "Unified macOS service console for launchd and Homebrew"
+            desc "Terminal dashboard for every background service on your Mac"
             homepage "https://github.com/sderosiaux/launchdeck"
             license any_of: ["MIT", "Apache-2.0"]
 

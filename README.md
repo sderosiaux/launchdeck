@@ -6,27 +6,35 @@
 [![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](#requirements)
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-orange)](Cargo.toml)
 
-The missing service dashboard for macOS.
+**Your Mac is running things you never agreed to.**
+
+Updaters for apps you deleted. Jobs that wake up while you sleep. A service that
+died months ago and never told you. Launchdeck puts all of it on one screen — and
+lets you shut it down for good.
 
 **[sderosiaux.github.io/launchdeck](https://sderosiaux.github.io/launchdeck/)**
-
-Launchdeck gives `launchd` jobs and Homebrew services one fast, readable control surface: status, schedules, plist metadata, logs, and guarded actions without spelunking through `launchctl`, `brew services`, and scattered plist files.
-
-It is built for real developer machines, where background work lives across `~/Library/LaunchAgents`, `/Library/LaunchDaemons`, Apple-managed jobs, vendor helpers, and Homebrew formulas. Launchdeck keeps the noisy system universe available when you need it, but starts with the services you are most likely to care about.
 
 ![Launchdeck TUI](assets/launchdeck.gif)
 
 ## Why Launchdeck?
 
-macOS service management is powerful, but the day-to-day experience is fragmented:
+Background work on macOS is spread across `launchd`, Homebrew and a pile of plist
+files nobody reads, and the day-to-day experience is fragmented:
 
-- `launchctl` knows runtime state, but its output is dense and domain-oriented.
-- Plist files explain schedules, logs, `RunAtLoad`, and `KeepAlive`, but they are spread across multiple directories.
-- `brew services` is convenient, but only sees the Homebrew side of the world.
+- `launchctl` knows runtime state, but its output is dense and domain-oriented,
+  and it says nothing about the plist that defines the job.
+- Plists explain schedules, logs, `RunAtLoad` and `KeepAlive` — but you have to
+  go find them first.
+- `brew services` is convenient, and blind to everything that is not a formula.
 - A stopped process might actually be a scheduled job waiting for its next run.
-- Killing a process is not the same thing as unloading a launchd job.
+  Those look identical from the outside.
+- Killing a process is not the same thing as unloading a launchd job. It comes
+  back.
 
-Launchdeck brings those pieces together and adds the safety rails you want before changing anything. It shows the command before it runs, blocks risky system/vendor actions, preserves selection by service identity across refreshes, and makes logs and schedules visible where you make decisions.
+Launchdeck brings those pieces together and adds the safety rails you want before
+changing anything. It shows the command before it runs, blocks risky
+system/vendor actions, preserves selection by service identity across refreshes,
+and makes logs and schedules visible where you make decisions.
 
 ## Install
 
