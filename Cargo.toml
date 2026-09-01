@@ -1,6 +1,6 @@
 [package]
 name = "launchdeck"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 description = "Unified macOS service console for launchd and Homebrew"
 license = "MIT OR Apache-2.0"
