@@ -1,0 +1,1803 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Launchdeck — the missing service dashboard for macOS</title>
+    <meta
+      name="description"
+      content="A fast terminal dashboard for launchd jobs and Homebrew services on macOS. Status, schedules, plists, logs and guarded actions, without spelunking through launchctl, brew services and scattered plist files."
+    />
+    <meta
+      name="keywords"
+      content="macOS, launchd, launchctl, Homebrew, brew services, LaunchAgent, LaunchDaemon, plist, TUI, terminal, service manager, Rust, ratatui"
+    />
+    <meta name="author" content="Stéphane Derosiaux" />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <meta name="theme-color" content="#0c0a09" />
+    <meta name="color-scheme" content="light" />
+    <link rel="canonical" href="https://sderosiaux.github.io/launchdeck/" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Launchdeck — the missing service dashboard for macOS" />
+    <meta
+      property="og:description"
+      content="launchd jobs and Homebrew services in one readable control surface. Status, schedules, plists, logs and guarded actions, in your terminal."
+    />
+    <meta property="og:url" content="https://sderosiaux.github.io/launchdeck/" />
+    <meta property="og:site_name" content="Launchdeck" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://sderosiaux.github.io/launchdeck/images/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta
+      property="og:image:alt"
+      content="The Launchdeck service list, showing launchd and Homebrew services with status, scope, schedule and plist path."
+    />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:creator" content="@sderosiaux" />
+    <meta name="twitter:title" content="Launchdeck — the missing service dashboard for macOS" />
+    <meta
+      name="twitter:description"
+      content="launchd jobs and Homebrew services in one readable control surface. Status, schedules, plists, logs and guarded actions, in your terminal."
+    />
+    <meta
+      name="twitter:image"
+      content="https://sderosiaux.github.io/launchdeck/images/og-card.png"
+    />
+
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="favicon.svg" />
+
+    <!-- Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.github.com" crossorigin />
+    <link rel="dns-prefetch" href="https://github.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preload" as="image" href="images/screenshot.png" fetchpriority="high" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Launchdeck",
+        "alternateName": "The missing service dashboard for macOS",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "System service manager",
+        "operatingSystem": "macOS",
+        "softwareVersion": "0.1.4",
+        "url": "https://sderosiaux.github.io/launchdeck/",
+        "description": "Terminal dashboard that unifies launchd jobs and Homebrew services on macOS: runtime status, schedules, parsed plist configuration, logs and guarded lifecycle actions.",
+        "image": "https://sderosiaux.github.io/launchdeck/images/og-card.png",
+        "screenshot": "https://sderosiaux.github.io/launchdeck/images/screenshot.png",
+        "downloadUrl": "https://github.com/sderosiaux/launchdeck/releases/latest",
+        "softwareHelp": "https://github.com/sderosiaux/launchdeck",
+        "license": "https://opensource.org/licenses/MIT",
+        "programmingLanguage": "Rust",
+        "featureList": [
+          "One service list for launchd jobs and Homebrew services",
+          "A distinct scheduled state for loaded jobs that are not running now",
+          "Provenance: which tool installed each job",
+          "Per-action privilege model with interactive sudo",
+          "Scrollable stdout, stderr and os_log views",
+          "Guarded start, stop, restart, enable, disable and delete",
+          "User LaunchAgent creation without hand-writing XML"
+        ],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Stéphane Derosiaux" }
+      }
+    </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How is Launchdeck different from launchctl?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "launchctl knows runtime state but its output is dense and domain-oriented, and it says nothing about the plist that defines the job. Launchdeck joins launchctl state, Homebrew metadata and parsed plist configuration into one list, so you see the schedule, the command, the log paths and the runtime status together."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Launchdeck need root?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Only for what genuinely requires it. Privileges are decided per action, not per service: an agent in /Library/LaunchAgents is root-owned on disk but runs in your own gui domain, so starting it needs nothing while deleting its plist needs root. When root is required, Launchdeck prefixes the command with sudo, shows it in full, and leaves the TUI so sudo can prompt on the real terminal."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Will Launchdeck change anything without asking?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Every action shows the exact command before it runs and waits for confirmation. Services under /System/Library are inspect-only, and vendor or runtime-only jobs are blocked unless they can be classified safely."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the scheduled status?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "A job that is loaded into launchd, has no running process right now, but has a StartInterval or StartCalendarInterval configured. In launchctl output it is indistinguishable from a stopped job, which is why a service you think is dead may wake up on its own later."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does it work with Homebrew services?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Homebrew services appear in the same list as launchd jobs and are managed through brew services, so Launchdeck never fights the tool that owns them. Homebrew is optional; without it, Launchdeck simply shows launchd jobs."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is Launchdeck safe to run on a work machine?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Launchdeck is read-only until you confirm an action. It shells out to launchctl, brew, plutil and log, sends nothing over the network, and has no telemetry. It is MIT or Apache-2.0 licensed and the source is on GitHub."
+            }
+          }
+        ]
+      }
+    </script>
+
+    <style>
+      :root {
+        /* Warm neutral base: this is a terminal tool, not a SaaS dashboard. */
+        --bg: #ffffff;
+        --bg-soft: #faf9f7;
+        --ink: #0c0a09;
+        --ink-soft: #1c1917;
+        --text: #292524;
+        --muted: #78716c;
+        --muted-dim: #a8a29e;
+        --border: #e7e5e4;
+        --border-strong: #d6d3d1;
+
+        /* Accent mirrors the app's own semantic palette. */
+        --accent: #0f766e;
+        --accent-hover: #115e59;
+        --accent-soft: #f0fdfa;
+        --accent-border: #99f6e4;
+
+        --running: #059669;
+        --scheduled: #0284c7;
+        --warn: #b45309;
+        --fail: #dc2626;
+
+        --shadow-sm: 0 1px 2px rgba(12, 10, 9, 0.05);
+        --shadow-md: 0 8px 24px -10px rgba(12, 10, 9, 0.14), 0 2px 6px rgba(12, 10, 9, 0.04);
+        --shadow-lg: 0 30px 70px -24px rgba(12, 10, 9, 0.3), 0 8px 20px -12px rgba(12, 10, 9, 0.14);
+
+        --radius: 10px;
+        --radius-lg: 16px;
+        --maxw: 1120px;
+
+        --sans:
+          "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 84px;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--sans);
+        color: var(--text);
+        background: var(--bg);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      a:hover {
+        color: var(--accent-hover);
+      }
+      h1,
+      h2,
+      h3 {
+        color: var(--ink);
+        letter-spacing: -0.025em;
+        line-height: 1.12;
+        margin: 0;
+      }
+      h1 {
+        font-size: clamp(38px, 5.6vw, 62px);
+        font-weight: 600;
+      }
+      h2 {
+        font-size: clamp(27px, 3.4vw, 38px);
+        font-weight: 600;
+      }
+      h3 {
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.012em;
+      }
+      p {
+        margin: 0;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.885em;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 1.5px 5px;
+        color: var(--ink-soft);
+      }
+      pre {
+        margin: 0;
+        background: var(--ink);
+        color: #e7e5e4;
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        overflow-x: auto;
+        font-size: 13.5px;
+        line-height: 1.7;
+      }
+      pre code {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: inherit;
+        font-size: inherit;
+      }
+
+      .wrap {
+        max-width: var(--maxw);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      section {
+        padding: 92px 0;
+        border-top: 1px solid var(--border);
+      }
+      .eyebrow {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 14px;
+      }
+      .lede {
+        font-size: clamp(16.5px, 1.6vw, 19px);
+        color: var(--muted);
+        max-width: 62ch;
+      }
+
+      /* ---------- Nav ---------- */
+      header.nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: saturate(170%) blur(12px);
+        -webkit-backdrop-filter: saturate(170%) blur(12px);
+        border-bottom: 1px solid transparent;
+        transition: border-color 0.2s;
+      }
+      header.nav.scrolled {
+        border-bottom-color: var(--border);
+      }
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        height: 64px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--ink);
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        font-size: 16px;
+      }
+      .brand svg {
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 26px;
+      }
+      .nav-links > a:not(.btn):not(.nav-star) {
+        color: var(--muted);
+        font-size: 14.5px;
+        font-weight: 500;
+      }
+      .nav-links > a:not(.btn):not(.nav-star):hover {
+        color: var(--ink);
+      }
+      .nav-star {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: 8px;
+        padding: 5px 10px;
+        background: var(--bg);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .nav-star:hover {
+        color: var(--ink);
+        border-color: var(--muted-dim);
+        box-shadow: var(--shadow-sm);
+      }
+      .nav-star svg {
+        width: 13px;
+        height: 13px;
+      }
+      .nav-star .count {
+        color: var(--muted);
+      }
+
+      /* ---------- Buttons ---------- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-radius: 9px;
+        font-weight: 500;
+        font-size: 14.5px;
+        padding: 9px 16px;
+        border: 1px solid transparent;
+        transition:
+          transform 0.12s,
+          box-shadow 0.15s,
+          background 0.15s,
+          border-color 0.15s;
+        white-space: nowrap;
+      }
+      .btn-primary {
+        background: var(--ink);
+        color: #fff;
+        box-shadow: var(--shadow-sm);
+      }
+      .btn-primary:hover {
+        background: var(--ink-soft);
+        color: #fff;
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md);
+      }
+      .btn-ghost {
+        background: var(--bg);
+        color: var(--ink);
+        border-color: var(--border-strong);
+      }
+      .btn-ghost:hover {
+        color: var(--ink);
+        border-color: var(--muted-dim);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-sm);
+      }
+      .btn-lg {
+        font-size: 15.5px;
+        padding: 12px 22px;
+        border-radius: 10px;
+      }
+
+      /* ---------- Hero ---------- */
+      .hero {
+        border-top: 0;
+        padding: 76px 0 0;
+        position: relative;
+        overflow: hidden;
+      }
+      /* Dotted grid: quiet texture, echoes a terminal cell matrix. */
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 560px;
+        background-image: radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);
+        background-size: 22px 22px;
+        -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 72%);
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 72%);
+        pointer-events: none;
+      }
+      .hero .wrap {
+        position: relative;
+      }
+      .hero-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 22px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        color: var(--muted);
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 11px;
+      }
+      .pill.accent {
+        color: var(--accent);
+        background: var(--accent-soft);
+        border-color: var(--accent-border);
+      }
+      h1 .dim {
+        color: var(--muted-dim);
+      }
+      .hero .lede {
+        margin-top: 22px;
+        max-width: 64ch;
+      }
+      .ctas {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 30px;
+      }
+      .install-line {
+        margin-top: 22px;
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-family: var(--mono);
+        font-size: 13.5px;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 9px 12px;
+        color: var(--ink-soft);
+        max-width: 100%;
+        overflow-x: auto;
+      }
+      .install-line .prompt {
+        color: var(--muted-dim);
+        user-select: none;
+      }
+      .copy-btn {
+        margin-left: auto;
+        flex-shrink: 0;
+        font-family: var(--sans);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted);
+        background: var(--bg);
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        padding: 3px 9px;
+        cursor: pointer;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+      .copy-btn:hover {
+        color: var(--ink);
+        border-color: var(--muted-dim);
+      }
+      .copy-btn.done {
+        color: var(--running);
+        border-color: var(--running);
+      }
+      .meta {
+        margin-top: 18px;
+        font-size: 13.5px;
+        color: var(--muted-dim);
+      }
+      .screenshot {
+        margin: 58px auto 0;
+        max-width: 1180px;
+        padding: 0 24px;
+        opacity: 0;
+        transform: translateY(18px) scale(0.99);
+        transition:
+          opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+          transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .screenshot.in {
+        opacity: 1;
+        transform: none;
+      }
+      .term {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid var(--border-strong);
+        box-shadow: var(--shadow-lg);
+        background: var(--ink);
+      }
+      .term-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 10px 14px;
+        background: #1c1917;
+        border-bottom: 1px solid #292524;
+      }
+      .term-bar i {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: #44403c;
+        display: block;
+      }
+      .term-bar .title {
+        margin-left: 8px;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: #a8a29e;
+      }
+      .term img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      /* ---------- Dark problem section ---------- */
+      .section-dark {
+        background: var(--ink);
+        color: #d6d3d1;
+        border-top: 0;
+      }
+      .section-dark h2,
+      .section-dark h3 {
+        color: #fafaf9;
+      }
+      .section-dark .lede {
+        color: #a8a29e;
+      }
+      .section-dark .eyebrow {
+        color: #5eead4;
+      }
+      .section-dark code {
+        background: #1c1917;
+        border-color: #292524;
+        color: #e7e5e4;
+      }
+      .why-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 34px;
+        align-items: end;
+        margin-bottom: 46px;
+      }
+      .why-stats {
+        display: flex;
+        gap: 28px;
+        font-family: var(--mono);
+      }
+      .why-stats div {
+        text-align: right;
+      }
+      .why-stats .num {
+        display: block;
+        font-size: 30px;
+        font-weight: 600;
+        color: #fafaf9;
+        line-height: 1.1;
+      }
+      .why-stats .lab {
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #78716c;
+      }
+      .mosaic {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 16px;
+      }
+      .tile {
+        background: #16130f;
+        background: linear-gradient(180deg, #17140f 0%, #131110 100%);
+        border: 1px solid #292524;
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        grid-column: span 2;
+        transition:
+          border-color 0.2s,
+          transform 0.2s;
+      }
+      .tile:hover {
+        border-color: #44403c;
+        transform: translateY(-2px);
+      }
+      .tile.span-3 {
+        grid-column: span 3;
+      }
+      .tile-tag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #78716c;
+        border: 1px solid #292524;
+        border-radius: 5px;
+        padding: 2px 7px;
+        margin-bottom: 14px;
+      }
+      .tile h3 {
+        margin-bottom: 9px;
+      }
+      .tile p {
+        font-size: 14.5px;
+        color: #a8a29e;
+      }
+      .tile pre {
+        margin-top: 14px;
+        background: #0c0a09;
+        border: 1px solid #292524;
+        font-size: 12.5px;
+        padding: 12px 14px;
+      }
+      .term-out {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.75;
+        margin-top: 14px;
+        background: #0c0a09;
+        border: 1px solid #292524;
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow-x: auto;
+        white-space: pre;
+        color: #a8a29e;
+      }
+      .term-out .g {
+        color: #34d399;
+      }
+      .term-out .b {
+        color: #38bdf8;
+      }
+      .term-out .r {
+        color: #f87171;
+      }
+      .term-out .y {
+        color: #fbbf24;
+      }
+      .term-out .d {
+        color: #57534e;
+      }
+      .term-out .w {
+        color: #e7e5e4;
+      }
+
+      /* ---------- Status table ---------- */
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+        gap: 14px;
+        margin-top: 42px;
+      }
+      .status-row {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        background: var(--bg);
+        transition:
+          border-color 0.18s,
+          box-shadow 0.18s;
+      }
+      .status-row:hover {
+        border-color: var(--border-strong);
+        box-shadow: var(--shadow-sm);
+      }
+      .status-key {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 3px 9px;
+        border-radius: 6px;
+        flex-shrink: 0;
+        border: 1px solid;
+      }
+      .st-running {
+        color: var(--running);
+        border-color: #a7f3d0;
+        background: #ecfdf5;
+      }
+      .st-scheduled {
+        color: var(--scheduled);
+        border-color: #bae6fd;
+        background: #f0f9ff;
+      }
+      .st-stopped {
+        color: var(--muted);
+        border-color: var(--border-strong);
+        background: var(--bg-soft);
+      }
+      .st-unloaded {
+        color: var(--muted-dim);
+        border-color: var(--border);
+        background: var(--bg-soft);
+      }
+      .st-disabled {
+        color: var(--warn);
+        border-color: #fde68a;
+        background: #fffbeb;
+      }
+      .st-failed {
+        color: var(--fail);
+        border-color: #fecaca;
+        background: #fef2f2;
+      }
+      .st-unknown {
+        color: var(--muted);
+        border-color: var(--border);
+        background: var(--bg);
+        border-style: dashed;
+      }
+      .status-row p {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .callout {
+        margin-top: 30px;
+        border-left: 3px solid var(--accent);
+        background: var(--accent-soft);
+        border-radius: 0 var(--radius) var(--radius) 0;
+        padding: 16px 20px;
+        font-size: 14.5px;
+        color: var(--ink-soft);
+      }
+
+      /* ---------- Two-column feature blocks ---------- */
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 56px;
+        align-items: center;
+        margin-top: 44px;
+      }
+      .split.narrow {
+        gap: 44px;
+      }
+      .origin-list {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .origin {
+        display: grid;
+        grid-template-columns: 118px 1fr;
+        gap: 14px;
+        align-items: baseline;
+        font-size: 14px;
+        padding: 9px 0;
+        border-bottom: 1px dashed var(--border);
+      }
+      .origin:last-child {
+        border-bottom: 0;
+      }
+      .origin b {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--accent);
+      }
+      .origin span {
+        color: var(--muted);
+      }
+
+      .elev-table {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .elev-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 16px;
+        align-items: center;
+        padding: 13px 18px;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
+      }
+      .elev-row:last-child {
+        border-bottom: 0;
+      }
+      .elev-row.head {
+        background: var(--bg-soft);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .elev-row code {
+        font-size: 12.5px;
+      }
+      .tick {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .tick.no {
+        color: var(--running);
+      }
+      .tick.yes {
+        color: var(--warn);
+      }
+
+      /* ---------- Features ---------- */
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 18px;
+        margin-top: 44px;
+      }
+      .feat {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        background: var(--bg);
+        transition:
+          border-color 0.18s,
+          transform 0.18s,
+          box-shadow 0.18s;
+      }
+      .feat:hover {
+        border-color: var(--border-strong);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+      }
+      .feat-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-border);
+        display: grid;
+        place-items: center;
+        margin-bottom: 15px;
+        color: var(--accent);
+      }
+      .feat-icon svg {
+        width: 16px;
+        height: 16px;
+      }
+      .feat h3 {
+        margin-bottom: 8px;
+      }
+      .feat p {
+        font-size: 14.5px;
+        color: var(--muted);
+      }
+
+      /* ---------- Keys ---------- */
+      .keys {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 36px;
+      }
+      .key {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 7px 12px;
+        background: var(--bg);
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      kbd {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--ink);
+        background: var(--bg-soft);
+        border: 1px solid var(--border-strong);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        padding: 1.5px 6px;
+        min-width: 22px;
+        text-align: center;
+      }
+
+      /* ---------- Install timeline ---------- */
+      .timeline {
+        margin-top: 46px;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+      }
+      .tline-item {
+        display: grid;
+        grid-template-columns: 38px 1fr;
+        gap: 20px;
+        align-items: start;
+      }
+      .marker {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--ink);
+        color: #fff;
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 500;
+        flex-shrink: 0;
+      }
+      .tline-item h3 {
+        margin-bottom: 10px;
+      }
+      .tline-item p {
+        font-size: 14.5px;
+        color: var(--muted);
+        margin-bottom: 12px;
+        max-width: 70ch;
+      }
+      .tline-item pre {
+        margin-bottom: 12px;
+        max-width: 760px;
+      }
+      .tline-item > div > *:last-child {
+        margin-bottom: 0;
+      }
+      .alt-install {
+        margin-top: 14px;
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+
+      /* ---------- FAQ ---------- */
+      .faq-list {
+        margin-top: 40px;
+        border-top: 1px solid var(--border);
+      }
+      details.faq-item {
+        border-bottom: 1px solid var(--border);
+      }
+      details.faq-item summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 20px 40px 20px 0;
+        font-weight: 500;
+        font-size: 16.5px;
+        color: var(--ink);
+        position: relative;
+        transition: color 0.15s;
+      }
+      details.faq-item summary::-webkit-details-marker {
+        display: none;
+      }
+      details.faq-item summary:hover {
+        color: var(--accent);
+      }
+      details.faq-item summary::after {
+        content: "+";
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-family: var(--mono);
+        font-size: 20px;
+        font-weight: 400;
+        color: var(--muted-dim);
+        transition: transform 0.2s;
+      }
+      details.faq-item[open] summary::after {
+        content: "−";
+        color: var(--accent);
+      }
+      details.faq-item .answer {
+        padding: 0 40px 22px 0;
+        font-size: 15px;
+        color: var(--muted);
+        max-width: 78ch;
+      }
+
+      /* ---------- Footer ---------- */
+      footer {
+        border-top: 1px solid var(--border);
+        background: var(--bg-soft);
+        padding: 44px 0;
+      }
+      .foot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .foot-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 22px;
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(14px);
+        transition:
+          opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+          transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .reveal.in {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* ---------- Responsive ---------- */
+      @media (max-width: 940px) {
+        .nav-links > a:not(.btn):not(.nav-star) {
+          display: none;
+        }
+        .why-head {
+          grid-template-columns: 1fr;
+          align-items: start;
+        }
+        .why-stats div {
+          text-align: left;
+        }
+        .mosaic {
+          grid-template-columns: 1fr 1fr;
+        }
+        .tile,
+        .tile.span-3 {
+          grid-column: span 2;
+        }
+        .split {
+          grid-template-columns: 1fr;
+          gap: 34px;
+        }
+      }
+      @media (max-width: 620px) {
+        section {
+          padding: 64px 0;
+        }
+        .hero {
+          padding-top: 52px;
+        }
+        .mosaic {
+          grid-template-columns: 1fr;
+        }
+        .tile,
+        .tile.span-3 {
+          grid-column: span 1;
+        }
+        .why-stats {
+          gap: 20px;
+        }
+        .nav-star span:not(.count) {
+          display: none;
+        }
+        .origin {
+          grid-template-columns: 1fr;
+          gap: 3px;
+        }
+        .screenshot {
+          padding: 0 16px;
+          margin-top: 40px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          transition-duration: 0.001ms !important;
+        }
+        .reveal,
+        .screenshot {
+          opacity: 1;
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="nav" id="nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href="#top" aria-label="Launchdeck home">
+          <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect width="32" height="32" rx="8" fill="#0c0a09" />
+            <path
+              d="M8 11.5 11.5 15 8 18.5"
+              stroke="#5eead4"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path d="M15 20h9" stroke="#78716c" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          Launchdeck
+        </a>
+        <nav class="nav-links">
+          <a href="#why">Why</a>
+          <a href="#status">Status model</a>
+          <a href="#control">Control</a>
+          <a href="#install">Install</a>
+          <a href="#faq">FAQ</a>
+          <a
+            class="nav-star"
+            href="https://github.com/sderosiaux/launchdeck"
+            target="_blank"
+            rel="noopener"
+            aria-label="Star Launchdeck on GitHub"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path
+                d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"
+              />
+            </svg>
+            <span>Star</span>
+            <span class="count" id="gh-stars">—</span>
+          </a>
+          <a
+            class="btn btn-primary"
+            href="https://github.com/sderosiaux/launchdeck/releases/latest"
+            target="_blank"
+            rel="noopener"
+            >Install</a
+          >
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ================= HERO ================= -->
+      <section class="hero">
+        <div class="wrap">
+          <div class="hero-badges">
+            <span class="pill accent">macOS</span>
+            <span class="pill">launchd + Homebrew</span>
+            <span class="pill">Written in Rust</span>
+            <span class="pill">MIT / Apache-2.0</span>
+          </div>
+          <h1>
+            Every background job on your Mac,<br />
+            <span class="dim">in one place.</span>
+          </h1>
+          <p class="lede">
+            Launchdeck gives <code>launchd</code> jobs and Homebrew services one fast, readable
+            control surface: status, schedules, plist metadata, logs and guarded actions — without
+            spelunking through <code>launchctl</code>, <code>brew services</code> and plist files
+            scattered across four directories.
+          </p>
+          <div class="ctas">
+            <a
+              class="btn btn-primary btn-lg"
+              href="#install"
+              >Install Launchdeck</a
+            >
+            <a
+              class="btn btn-ghost btn-lg"
+              href="https://github.com/sderosiaux/launchdeck"
+              target="_blank"
+              rel="noopener"
+              >View on GitHub</a
+            >
+          </div>
+          <div class="install-line">
+            <span class="prompt">$</span>
+            <span id="install-cmd">brew install sderosiaux/tap/launchdeck</span>
+            <button class="copy-btn" id="copy-install" type="button">Copy</button>
+          </div>
+          <p class="meta">
+            No daemon. No telemetry. No network calls. It shells out to the same tools you would.
+          </p>
+        </div>
+
+        <div class="screenshot" id="hero-frame">
+          <div class="term">
+            <div class="term-bar">
+              <i></i><i></i><i></i>
+              <span class="title">launchdeck</span>
+            </div>
+            <img
+              src="images/screenshot.png"
+              alt="The Launchdeck service list: launchd and Homebrew services with status, source, scope, pid, RunAtLoad, schedule and plist path, sorted by status."
+              width="1125"
+              height="612"
+              loading="eager"
+              decoding="async"
+              fetchpriority="high"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= WHY (dark) ================= -->
+      <section class="section-dark" id="why">
+        <div class="wrap">
+          <div class="why-head">
+            <div>
+              <span class="eyebrow">The problem</span>
+              <h2>macOS service management is fragmented.</h2>
+              <p class="lede" style="margin-top: 16px">
+                Nothing here is broken, exactly. It is just spread across four tools that do not
+                talk to each other, and two of the states that matter most look identical from the
+                outside.
+              </p>
+            </div>
+            <div class="why-stats" aria-label="scope of the problem">
+              <div>
+                <span class="num">4</span><span class="lab">directories</span>
+              </div>
+              <div>
+                <span class="num">3</span><span class="lab">tools</span>
+              </div>
+              <div>
+                <span class="num">1</span><span class="lab">list</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mosaic">
+            <div class="tile span-3">
+              <span class="tile-tag">launchctl</span>
+              <h3>Dense output, no configuration</h3>
+              <p>
+                <code>launchctl print</code> knows runtime state, but it is domain-oriented and says
+                nothing about the plist that defines the job — no schedule, no command, no log
+                paths.
+              </p>
+              <div class="term-out"><span class="d">$</span> launchctl print gui/501 <span class="d">| head</span>
+<span class="d">  services = {</span>
+<span class="d">        1289      -  </span><span class="w">com.projects-widget</span>
+<span class="d">           0      0  </span><span class="w">com.claude.warehouse</span>
+<span class="d">       40098   (pe)  </span><span class="w">com.apple.syncdefaultsd</span></div>
+            </div>
+
+            <div class="tile span-3">
+              <span class="tile-tag">Ambiguity</span>
+              <h3>Stopped and scheduled look the same</h3>
+              <p>
+                A job with no running process may be genuinely idle — or waiting on a
+                <code>StartInterval</code> to fire at 03:00. Same output. Launchdeck separates them,
+                because the difference decides whether you need to act.
+              </p>
+              <div class="term-out"><span class="g">running  </span> com.docker.vmnetd     <span class="d">pid 801</span>
+<span class="b">scheduled</span> com.claude.warehouse  <span class="y">10min</span>
+<span class="b">scheduled</span> com.google.Go…wake    <span class="y">1h</span>
+<span class="d">stopped  </span> org.wireshark.Chmod…  <span class="d">–</span></div>
+            </div>
+
+            <div class="tile span-2">
+              <span class="tile-tag">plists</span>
+              <h3>Four directories</h3>
+              <p>
+                <code>~/Library/LaunchAgents</code>, <code>/Library/LaunchAgents</code>,
+                <code>/Library/LaunchDaemons</code> and the Apple-managed trees under
+                <code>/System/Library</code>. Launchdeck reads all of them and parses what is
+                inside.
+              </p>
+            </div>
+
+            <div class="tile span-2">
+              <span class="tile-tag">brew services</span>
+              <h3>Only half the world</h3>
+              <p>
+                Convenient, but blind to everything that is not a formula. Launchdeck shows both,
+                and manages each through the tool that owns it — so it never fights Homebrew.
+              </p>
+            </div>
+
+            <div class="tile span-2">
+              <span class="tile-tag">Footgun</span>
+              <h3>Killing ≠ unloading</h3>
+              <p>
+                <code>kill</code> a process and launchd may bring it straight back. Stopping a
+                scheduled job uses <code>launchctl bootout</code> so it is actually unloaded and
+                will not wake up on its next tick.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= STATUS MODEL ================= -->
+      <section id="status">
+        <div class="wrap">
+          <span class="eyebrow">Status model</span>
+          <h2>Seven states, told apart.</h2>
+          <p class="lede" style="margin-top: 16px">
+            Most of the value is here. These states are collapsed or invisible in
+            <code>launchctl</code> output, and telling them apart is the difference between "this is
+            fine" and "this has been silently failing for a week".
+          </p>
+
+          <div class="status-grid">
+            <div class="status-row">
+              <span class="status-key st-running">running</span>
+              <p>launchd has an active PID for the job.</p>
+            </div>
+            <div class="status-row">
+              <span class="status-key st-scheduled">scheduled</span>
+              <p>
+                Loaded, no PID right now, but a schedule is configured. It will wake up on its own.
+              </p>
+            </div>
+            <div class="status-row">
+              <span class="status-key st-stopped">stopped</span>
+              <p>Loaded, no PID, and no known schedule. Genuinely idle.</p>
+            </div>
+            <div class="status-row">
+              <span class="status-key st-unloaded">unloaded</span>
+              <p>The plist exists on disk, but the job is not loaded into launchd at all.</p>
+            </div>
+            <div class="status-row">
+              <span class="status-key st-disabled">disabled</span>
+              <p>launchd marks the job disabled in its domain. It will not start until enabled.</p>
+            </div>
+            <div class="status-row">
+              <span class="status-key st-failed">failed</span>
+              <p>launchd or Homebrew reported a non-zero exit or an error state.</p>
+            </div>
+            <div class="status-row">
+              <span class="status-key st-unknown">unknown</span>
+              <p>The current state could not be classified. Shown as such rather than guessed.</p>
+            </div>
+          </div>
+
+          <div class="callout">
+            Compact schedule summaries make the difference legible at a glance:
+            <code>5min</code>, <code>1h</code>, <code>00:00</code>, <code>Sun 09:00</code> — parsed
+            from <code>StartInterval</code> and <code>StartCalendarInterval</code>, not shown as raw
+            plist dictionaries.
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CONTROL: provenance + privileges ================= -->
+      <section id="control">
+        <div class="wrap">
+          <span class="eyebrow">Know before you touch</span>
+          <h2>Who installed this, and what will it cost to change it?</h2>
+          <p class="lede" style="margin-top: 16px">
+            Two questions <code>launchctl</code> cannot answer, and both decide whether your change
+            survives the week.
+          </p>
+
+          <div class="split">
+            <div>
+              <h3 style="font-size: 20px; margin-bottom: 12px">Provenance</h3>
+              <p style="color: var(--muted); font-size: 15px; margin-bottom: 20px">
+                Editing a plist that Homebrew owns lasts until the next
+                <code>brew upgrade</code>. Editing one that nix-darwin owns lasts until the next
+                <code>switch</code>. Launchdeck classifies every job from signals it already has —
+                no extra subprocess — and shows the evidence behind the guess.
+              </p>
+              <div class="origin-list">
+                <div class="origin">
+                  <b>homebrew</b><span>manage with <code>brew services</code></span>
+                </div>
+                <div class="origin">
+                  <b>user-plist</b><span>edit the plist or use <code>launchctl</code></span>
+                </div>
+                <div class="origin"><b>nix</b><span>edit the Nix config, then rebuild/switch</span></div>
+                <div class="origin">
+                  <b>mise</b><span>edit <code>mise.toml</code>, then re-run the bootstrap</span>
+                </div>
+                <div class="origin">
+                  <b>vendor-app</b><span>change it from the owning app's settings</span>
+                </div>
+                <div class="origin"><b>system</b><span>Apple-managed; inspect only</span></div>
+                <div class="origin">
+                  <b>runtime-only</b><span>no plist on disk; inspect before changing</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 style="font-size: 20px; margin-bottom: 12px">Privileges, per action</h3>
+              <p style="color: var(--muted); font-size: 15px; margin-bottom: 20px">
+                launchd scope and file ownership are independent. An agent in
+                <code>/Library/LaunchAgents</code> is root-owned on disk but runs in
+                <em>your</em> <code>gui/&lt;uid&gt;</code> domain — so starting it needs nothing,
+                while deleting its plist needs root. Launchdeck decides per action instead of
+                blocking the whole service.
+              </p>
+              <div class="elev-table">
+                <div class="elev-row head">
+                  <span>Action on a root-owned agent</span><span>sudo</span>
+                </div>
+                <div class="elev-row">
+                  <span>Start, stop, restart</span><span class="tick no">not needed</span>
+                </div>
+                <div class="elev-row">
+                  <span>Enable, disable</span><span class="tick no">not needed</span>
+                </div>
+                <div class="elev-row">
+                  <span>Toggle <code>RunAtLoad</code></span><span class="tick yes">required</span>
+                </div>
+                <div class="elev-row">
+                  <span>Delete the plist</span><span class="tick yes">required</span>
+                </div>
+              </div>
+              <p style="color: var(--muted); font-size: 14px; margin-top: 18px">
+                When root is required, the confirmation prompt shows the command
+                <em>including</em> the <code>sudo</code> prefix, then Launchdeck leaves the TUI so
+                <code>sudo</code> can prompt on the real terminal. The command runs as an argument
+                list, never through a shell, and your password never passes through Launchdeck.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= FEATURES ================= -->
+      <section id="features" style="background: var(--bg-soft)">
+        <div class="wrap">
+          <span class="eyebrow">Features</span>
+          <h2>Built for real developer machines.</h2>
+
+          <div class="features">
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M2 4h12M2 8h12M2 12h8" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h3>One unified list</h3>
+              <p>
+                launchd jobs and Homebrew services side by side, enriched with parsed plist
+                configuration and runtime state from <code>launchctl</code>.
+              </p>
+            </div>
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="7" cy="7" r="4.6" />
+                  <path d="M10.5 10.5 14 14" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h3>Type-to-search and filters</h3>
+              <p>
+                Filter by source and status, show warnings only, toggle Apple/system services, and
+                sort by name, status, source or health.
+              </p>
+            </div>
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="2" y="2.5" width="12" height="11" rx="2" />
+                  <path d="M5 6h6M5 9h4" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h3>Logs where you decide</h3>
+              <p>
+                Scrollable <code>stdout</code> and <code>stderr</code> from the paths the plist
+                declares, plus a unified <code>os_log</code> stream for the job.
+              </p>
+            </div>
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M8 1.8 13.4 4v4c0 3.2-2.2 5.4-5.4 6.2C4.8 13.4 2.6 11.2 2.6 8V4L8 1.8Z" />
+                </svg>
+              </div>
+              <h3>Guarded actions</h3>
+              <p>
+                Every action shows the exact command and waits for confirmation.
+                <code>/System/Library</code> is inspect-only; destructive actions always confirm.
+              </p>
+            </div>
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M8 3.2v9.6M3.2 8h9.6" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h3>Create agents without XML</h3>
+              <p>
+                A form for the common plist fields — arguments, working directory, env, log paths,
+                <code>RunAtLoad</code>, intervals — validated and linted before it is written.
+              </p>
+            </div>
+            <div class="feat">
+              <div class="feat-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4" stroke-linecap="round" />
+                  <path d="M13.6 2.4v3.2h-3.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </div>
+              <h3>Background refresh</h3>
+              <p>
+                The inventory refreshes without blocking the UI, and keeps your selection stable by
+                service identity rather than by row index.
+              </p>
+            </div>
+          </div>
+
+          <div class="keys">
+            <span class="key"><kbd>/</kbd> search</span>
+            <span class="key"><kbd>↵</kbd> detail</span>
+            <span class="key"><kbd>L</kbd> logs</span>
+            <span class="key"><kbd>S</kbd> start</span>
+            <span class="key"><kbd>X</kbd> stop</span>
+            <span class="key"><kbd>R</kbd> restart</span>
+            <span class="key"><kbd>T</kbd> enable / disable</span>
+            <span class="key"><kbd>E</kbd> edit plist</span>
+            <span class="key"><kbd>D</kbd> delete</span>
+            <span class="key"><kbd>N</kbd> new agent</span>
+            <span class="key"><kbd>?</kbd> help</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= INSTALL ================= -->
+      <section id="install">
+        <div class="wrap">
+          <span class="eyebrow">Install</span>
+          <h2>Running in under a minute.</h2>
+
+          <div class="timeline">
+            <div class="tline-item">
+              <span class="marker">1</span>
+              <div>
+                <h3>Install</h3>
+                <p>Via Homebrew, which is the shortest path and keeps it updated:</p>
+                <pre><code>brew install sderosiaux/tap/launchdeck</code></pre>
+                <p class="alt-install">
+                  Without Homebrew, the installer script writes to <code>~/.local/bin</code>:
+                </p>
+                <pre><code>curl -fsSL https://raw.githubusercontent.com/sderosiaux/launchdeck/main/scripts/install.sh | sh</code></pre>
+                <p class="alt-install">
+                  Or from source, if you have a Rust toolchain:
+                  <code>cargo install launchdeck</code>. Prebuilt archives for Apple Silicon and
+                  Intel are on the
+                  <a
+                    href="https://github.com/sderosiaux/launchdeck/releases/latest"
+                    target="_blank"
+                    rel="noopener"
+                    >releases page</a
+                  >.
+                </p>
+              </div>
+            </div>
+
+            <div class="tline-item">
+              <span class="marker">2</span>
+              <div>
+                <h3>Look before you touch</h3>
+                <p>
+                  Launchdeck opens on the services you are most likely to care about, hiding the
+                  Apple/system noise until you ask for it with <kbd>A</kbd>. Nothing is modified
+                  until you confirm an action.
+                </p>
+                <pre><code>launchdeck</code></pre>
+                <p class="alt-install">
+                  For scripts and pipes, the same inventory without the TUI:
+                  <code>launchdeck list</code>, or <code>launchdeck list --all</code> to include
+                  Apple and system services.
+                </p>
+              </div>
+            </div>
+
+            <div class="tline-item">
+              <span class="marker">3</span>
+              <div>
+                <h3>Act, with the command in front of you</h3>
+                <p>
+                  Press <kbd>S</kbd>, <kbd>X</kbd> or <kbd>R</kbd> and Launchdeck shows you the
+                  exact <code>launchctl</code> or <code>brew services</code> invocation it is about
+                  to run. Press <kbd>y</kbd> to confirm, <kbd>n</kbd> to walk away. If the action
+                  needs root, the <code>sudo</code> prefix is right there in the prompt.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= FAQ ================= -->
+      <section id="faq" style="background: var(--bg-soft)">
+        <div class="wrap">
+          <span class="eyebrow">FAQ</span>
+          <h2>Questions worth asking.</h2>
+
+          <div class="faq-list">
+            <details class="faq-item">
+              <summary>How is this different from just using launchctl?</summary>
+              <div class="answer">
+                <code>launchctl</code> knows runtime state, but its output is dense, domain-oriented
+                and says nothing about the plist that defines the job. Launchdeck joins
+                <code>launchctl</code> state, Homebrew metadata and parsed plist configuration into
+                one list, so the schedule, the command, the log paths and the runtime status are all
+                in front of you at once — and it still runs <code>launchctl</code> underneath, so
+                there is no second source of truth.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Does Launchdeck need root?</summary>
+              <div class="answer">
+                Only for what genuinely requires it, decided per action rather than per service.
+                Starting an agent from <code>/Library/LaunchAgents</code> needs nothing because it
+                runs in your own <code>gui</code> domain; deleting that same root-owned plist needs
+                root. When root is required, the command is prefixed with <code>sudo</code> and
+                shown in full, then Launchdeck leaves the TUI so <code>sudo</code> prompts on the
+                real terminal. The password never passes through Launchdeck, and commands are always
+                executed as an argument list rather than a shell string.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Will it change anything without asking?</summary>
+              <div class="answer">
+                No. Every action shows the exact command before it runs and waits for confirmation.
+                Services under <code>/System/Library</code> are inspect-only, vendor and
+                runtime-only jobs are blocked unless they can be classified safely, and destructive
+                actions like deleting a plist always confirm.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>What exactly is the "scheduled" state?</summary>
+              <div class="answer">
+                A job that is loaded into launchd, has no running process right now, but has a
+                <code>StartInterval</code> or <code>StartCalendarInterval</code> configured. In
+                <code>launchctl</code> output it is indistinguishable from a stopped job — which is
+                why a service you assume is dead can wake up at 03:00. Stopping a scheduled job uses
+                <code>launchctl bootout</code>, so it is genuinely unloaded rather than merely
+                killed.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Do I need Homebrew?</summary>
+              <div class="answer">
+                No. Homebrew is optional. With it, <code>brew services</code> entries appear in the
+                same list and are managed through <code>brew</code> so Launchdeck never fights the
+                tool that owns them. Without it, you simply get the launchd side of the world.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Is it safe to run on a work machine?</summary>
+              <div class="answer">
+                Launchdeck is read-only until you confirm an action. It shells out to
+                <code>launchctl</code>, <code>brew</code>, <code>plutil</code> and <code>log</code>,
+                makes no network calls, and collects no telemetry. It is dual-licensed MIT or
+                Apache-2.0 and the source is on GitHub — the confirmation prompt exists precisely so
+                you never have to take its word for what it is about to do.
+              </div>
+            </details>
+            <details class="faq-item">
+              <summary>Linux or Windows?</summary>
+              <div class="answer">
+                No. Launchdeck is built around <code>launchd</code>, which is macOS-specific. There
+                is no meaningful way to port the model to systemd without it becoming a different
+                tool.
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap foot">
+        <div>
+          <strong style="color: var(--ink)">Launchdeck</strong> — built by
+          <a href="https://github.com/sderosiaux" target="_blank" rel="noopener">Stéphane Derosiaux</a
+          >. MIT or Apache-2.0.
+        </div>
+        <div class="foot-links">
+          <a href="https://github.com/sderosiaux/launchdeck" target="_blank" rel="noopener">GitHub</a>
+          <a
+            href="https://github.com/sderosiaux/launchdeck/releases/latest"
+            target="_blank"
+            rel="noopener"
+            >Releases</a
+          >
+          <a href="https://crates.io/crates/launchdeck" target="_blank" rel="noopener">crates.io</a>
+          <a
+            href="https://github.com/sderosiaux/launchdeck/issues"
+            target="_blank"
+            rel="noopener"
+            >Report an issue</a
+          >
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // Sticky nav hairline once scrolled.
+      const nav = document.getElementById("nav");
+      const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 4);
+      document.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+
+      // Star count, best effort: the page must not depend on it.
+      fetch("https://api.github.com/repos/sderosiaux/launchdeck")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d || d.stargazers_count == null) return;
+          const n = d.stargazers_count;
+          const el = document.getElementById("gh-stars");
+          if (el) {
+            el.textContent =
+              n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
+          }
+        })
+        .catch(() => {});
+
+      // Copy the install one-liner.
+      const copyBtn = document.getElementById("copy-install");
+      copyBtn?.addEventListener("click", async () => {
+        const cmd = document.getElementById("install-cmd")?.textContent?.trim();
+        if (!cmd) return;
+        try {
+          await navigator.clipboard.writeText(cmd);
+          copyBtn.textContent = "Copied";
+          copyBtn.classList.add("done");
+          setTimeout(() => {
+            copyBtn.textContent = "Copy";
+            copyBtn.classList.remove("done");
+          }, 1600);
+        } catch {
+          copyBtn.textContent = "Press ⌘C";
+        }
+      });
+
+      // Reveal on scroll.
+      const io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.add("in");
+              io.unobserve(e.target);
+            }
+          });
+        },
+        { threshold: 0.08 },
+      );
+      document.querySelectorAll(".reveal, .screenshot").forEach((el) => io.observe(el));
+    </script>
+  </body>
+</html>

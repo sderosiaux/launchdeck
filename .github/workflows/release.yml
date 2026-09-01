@@ -86,10 +86,12 @@ jobs:
           set -euo pipefail
           cat dist/*.sha256 > dist/checksums.txt
           if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            # --generate-notes builds the changelog server-side from the commits and
+            # PRs since the previous tag, so it needs no checkout and no manual upkeep.
             gh release create "${TAG}" \
               --repo "${REPO}" \
               --title "${TAG}" \
-              --notes "macOS release for Launchdeck ${TAG}."
+              --generate-notes
           fi
           gh release upload "${TAG}" --repo "${REPO}" --clobber dist/*.tar.gz dist/checksums.txt
       - name: Update Homebrew tap

@@ -2,10 +2,13 @@
 
 [![CI](https://github.com/sderosiaux/launchdeck/actions/workflows/ci.yml/badge.svg)](https://github.com/sderosiaux/launchdeck/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/sderosiaux/launchdeck?sort=semver)](https://github.com/sderosiaux/launchdeck/releases)
+[![crates.io](https://img.shields.io/crates/v/launchdeck)](https://crates.io/crates/launchdeck)
 [![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](#requirements)
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-orange)](Cargo.toml)
 
 The missing service dashboard for macOS.
+
+**[sderosiaux.github.io/launchdeck](https://sderosiaux.github.io/launchdeck/)**
 
 Launchdeck gives `launchd` jobs and Homebrew services one fast, readable control surface: status, schedules, plist metadata, logs, and guarded actions without spelunking through `launchctl`, `brew services`, and scattered plist files.
 

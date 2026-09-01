@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sderosiaux.github.io/launchdeck/sitemap.xml
