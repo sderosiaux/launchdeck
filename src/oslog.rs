@@ -182,6 +182,8 @@ mod tests {
             brew_formula: Some("redis".to_string()),
             brew_status: Some("started".to_string()),
             safety_level: SafetyLevel::UserWritable,
+            elevation: crate::model::ElevationNeeds::none(),
+            origin: crate::model::Origin::unknown(),
             health: Vec::new(),
         }
     }

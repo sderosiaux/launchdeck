@@ -1,22 +1,43 @@
 use crate::model::{
-    CalendarSchedule, Inventory, LaunchConfig, SafetyLevel, Service, ServiceScope, ServiceSource,
-    ServiceStatus,
+    CalendarSchedule, Confidence, ElevationNeeds, Inventory, LaunchConfig, Origin, Provenance,
+    SafetyLevel, Service, ServiceScope, ServiceSource, ServiceStatus,
 };
 use anyhow::{Context, Result};
 use plist::Value;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct BrewService {
     name: String,
     status: String,
     user: Option<String>,
     file: Option<String>,
     exit_code: Option<i32>,
+}
+
+/// `brew services list --json` costs ~0.9s of the ~1.1s inventory pass, and brew
+/// state only changes when someone runs brew. Polling it at the launchctl cadence
+/// burns battery for nothing, so it gets its own TTL and is bypassed after any
+/// action the user just confirmed.
+const BREW_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Debug)]
+pub struct BrewSnapshot {
+    fetched: Instant,
+    services: Vec<BrewService>,
+}
+
+pub type BrewCache = Arc<Mutex<Option<BrewSnapshot>>>;
+
+pub fn new_brew_cache() -> BrewCache {
+    Arc::new(Mutex::new(None))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -27,6 +48,12 @@ struct RuntimeState {
 }
 
 pub fn load_inventory() -> Inventory {
+    load_inventory_with(None, true)
+}
+
+/// `cache` reuses a recent `brew services` snapshot; `force_brew` bypasses it when
+/// the user just ran an action and expects the new state immediately.
+pub fn load_inventory_with(cache: Option<&BrewCache>, force_brew: bool) -> Inventory {
     let mut warnings = Vec::new();
     let uid = current_uid();
     let mut services = BTreeMap::<String, Service>::new();
@@ -38,14 +65,15 @@ pub fn load_inventory() -> Inventory {
     }
 
     let runtime = read_runtime(uid, &mut warnings);
-    apply_runtime(&mut services, runtime);
+    apply_runtime(&mut services, runtime, uid);
 
     let disabled = read_disabled(uid, &mut warnings);
     apply_disabled(&mut services, disabled);
 
-    apply_brew_services(uid, &mut services, &mut warnings);
+    apply_brew_services(uid, &mut services, &mut warnings, cache, force_brew);
 
     for service in services.values_mut() {
+        service.origin = classify_origin(service);
         finish_health(service);
     }
 
@@ -110,6 +138,7 @@ fn read_plist_dir(
             }
             Err(err) => {
                 let id = format!("unreadable:{}", path.display());
+                let elevation = elevation_for(&scope.domain(uid), Some(&path), uid);
                 services.insert(
                     id.clone(),
                     Service {
@@ -137,6 +166,8 @@ fn read_plist_dir(
                         brew_formula: None,
                         brew_status: None,
                         safety_level: safety_for_scope(&scope, dir),
+                        elevation,
+                        origin: Origin::unknown(),
                         health: vec![format!("plist parse failed: {err}")],
                     },
                 );
@@ -203,6 +234,7 @@ fn service_from_plist(path: &Path, scope: ServiceScope, uid: u32) -> Result<Serv
     };
 
     let domain = scope.domain(uid);
+    let domain_for_elevation = domain.clone();
     let safety_level = safety_for_scope(
         &scope,
         path.parent()
@@ -230,6 +262,8 @@ fn service_from_plist(path: &Path, scope: ServiceScope, uid: u32) -> Result<Serv
         brew_formula: None,
         brew_status: None,
         safety_level,
+        elevation: elevation_for(&domain_for_elevation, Some(path), uid),
+        origin: Origin::unknown(),
         health: Vec::new(),
     })
 }
@@ -240,6 +274,34 @@ fn describe_plist_value(value: &Value) -> String {
         Value::Dictionary(_) => "conditional".to_string(),
         Value::Array(_) => "array".to_string(),
         _ => "configured".to_string(),
+    }
+}
+
+/// Best-effort write check without pulling in libc. Supplementary groups are not
+/// resolved, so a group-writable root-owned file reads as "needs root". That errs
+/// toward asking for elevation we did not strictly need, never toward skipping it.
+fn is_writable(path: &Path, uid: u32) -> bool {
+    if uid == 0 {
+        return true;
+    }
+    let Ok(meta) = path.metadata() else {
+        return false;
+    };
+    let mode = meta.mode();
+    if meta.uid() == uid {
+        mode & 0o200 != 0
+    } else {
+        mode & 0o002 != 0
+    }
+}
+
+fn elevation_for(domain: &str, plist_path: Option<&Path>, uid: u32) -> ElevationNeeds {
+    ElevationNeeds {
+        runtime: domain == "system" && uid != 0,
+        plist_write: !plist_path.is_some_and(|path| is_writable(path, uid)),
+        plist_remove: !plist_path
+            .and_then(Path::parent)
+            .is_some_and(|dir| is_writable(dir, uid)),
     }
 }
 
@@ -359,7 +421,11 @@ fn parse_launchctl_print(domain: &str, text: &str, runtime: &mut HashMap<String,
     }
 }
 
-fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<String, RuntimeState>) {
+fn apply_runtime(
+    services: &mut BTreeMap<String, Service>,
+    runtime: HashMap<String, RuntimeState>,
+    uid: u32,
+) {
     let known_ids = services.keys().cloned().collect::<HashSet<_>>();
 
     for (id, state) in &runtime {
@@ -385,6 +451,7 @@ fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<Stri
         } else {
             ServiceScope::UserAgent
         };
+        let elevation = elevation_for(&domain, None, uid);
         services.insert(
             id.clone(),
             Service {
@@ -407,6 +474,8 @@ fn apply_runtime(services: &mut BTreeMap<String, Service>, runtime: HashMap<Stri
                 brew_formula: None,
                 brew_status: None,
                 safety_level: SafetyLevel::ProtectedVendor,
+                elevation,
+                origin: Origin::unknown(),
                 health: Vec::new(),
             },
         );
@@ -457,13 +526,14 @@ fn read_disabled(uid: u32, warnings: &mut Vec<String>) -> HashSet<String> {
 
 fn parse_disabled(domain: &str, text: &str, disabled: &mut HashSet<String>) {
     for line in text.lines() {
-        let trimmed = line.trim();
-        if !trimmed.contains("=> true") {
+        let Some((label, state)) = line.trim().split_once("=>") else {
+            continue;
+        };
+        // macOS <= 12 prints `=> true`/`=> false`, macOS >= 13 prints `=> disabled`/`=> enabled`.
+        if !matches!(state.trim(), "true" | "disabled") {
             continue;
         }
-        if let Some((label, _)) = trimmed.split_once("=>") {
-            disabled.insert(format!("{}:{}", domain, label.trim().trim_matches('"')));
-        }
+        disabled.insert(format!("{}:{}", domain, label.trim().trim_matches('"')));
     }
 }
 
@@ -478,11 +548,20 @@ fn apply_disabled(services: &mut BTreeMap<String, Service>, disabled: HashSet<St
     }
 }
 
-fn apply_brew_services(
-    uid: u32,
-    services: &mut BTreeMap<String, Service>,
+fn read_brew_services(
     warnings: &mut Vec<String>,
-) {
+    cache: Option<&BrewCache>,
+    force: bool,
+) -> Option<Vec<BrewService>> {
+    if !force
+        && let Some(cache) = cache
+        && let Ok(guard) = cache.lock()
+        && let Some(snapshot) = guard.as_ref()
+        && snapshot.fetched.elapsed() < BREW_TTL
+    {
+        return Some(snapshot.services.clone());
+    }
+
     let output = Command::new("brew")
         .args(["services", "list", "--json"])
         .output();
@@ -491,11 +570,11 @@ fn apply_brew_services(
         Ok(output) => {
             let err = String::from_utf8_lossy(&output.stderr);
             warnings.push(format!("brew services list --json: {}", err.trim()));
-            return;
+            return None;
         }
         Err(err) => {
             warnings.push(format!("brew services list --json: {err}"));
-            return;
+            return None;
         }
     };
 
@@ -503,8 +582,31 @@ fn apply_brew_services(
         Ok(services) => services,
         Err(err) => {
             warnings.push(format!("brew services JSON parse failed: {err}"));
-            return;
+            return None;
         }
+    };
+
+    if let Some(cache) = cache
+        && let Ok(mut guard) = cache.lock()
+    {
+        *guard = Some(BrewSnapshot {
+            fetched: Instant::now(),
+            services: brew_services.clone(),
+        });
+    }
+
+    Some(brew_services)
+}
+
+fn apply_brew_services(
+    uid: u32,
+    services: &mut BTreeMap<String, Service>,
+    warnings: &mut Vec<String>,
+    cache: Option<&BrewCache>,
+    force: bool,
+) {
+    let Some(brew_services) = read_brew_services(warnings, cache, force) else {
+        return;
     };
 
     for brew in brew_services {
@@ -525,6 +627,10 @@ fn apply_brew_services(
             service.exit_code = service.exit_code.or(brew.exit_code);
             if service.plist_path.is_none() {
                 service.plist_path = file;
+                // The plist only just became known, so the earlier elevation guess
+                // (computed without a path) is stale.
+                service.elevation =
+                    elevation_for(&service.domain, service.plist_path.as_deref(), uid);
             }
             if service.status == ServiceStatus::Unloaded {
                 service.status = status_from_brew(&brew.status, brew.exit_code);
@@ -542,6 +648,7 @@ fn apply_brew_services(
             config.program = Some(format!("brew services start {}", brew.name));
         }
 
+        let elevation = elevation_for(&domain, file.as_deref(), uid);
         services.insert(
             id.clone(),
             Service {
@@ -565,6 +672,8 @@ fn apply_brew_services(
                 brew_formula: Some(brew.name),
                 brew_status: Some(brew.status),
                 safety_level: SafetyLevel::UserWritable,
+                elevation,
+                origin: Origin::unknown(),
                 health: Vec::new(),
             },
         );
@@ -588,6 +697,124 @@ fn status_from_brew(status: &str, exit_code: Option<i32>) -> ServiceStatus {
         _ if exit_code.is_some_and(|code| code != 0) => ServiceStatus::Failed,
         _ => ServiceStatus::Unknown,
     }
+}
+
+/// Classify who installed the job, from signals already in memory. Ordering is
+/// the whole design: a nix-darwin daemon lives in `/Library/LaunchDaemons` like
+/// any vendor helper, so the `/nix/store` command path has to win over the
+/// directory it sits in.
+fn classify_origin(service: &Service) -> Origin {
+    let plist = service
+        .plist_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    let command = service
+        .config
+        .program
+        .as_deref()
+        .or_else(|| service.config.arguments.first().map(String::as_str))
+        .unwrap_or_default();
+
+    let origin = |kind: Provenance, confidence: Confidence, evidence: &str| Origin {
+        kind,
+        confidence,
+        evidence: vec![evidence.to_string()],
+    };
+
+    if let Some(formula) = &service.brew_formula {
+        return origin(
+            Provenance::Homebrew,
+            Confidence::High,
+            &format!("brew services knows formula `{formula}`"),
+        );
+    }
+    if service.label.starts_with("homebrew.mxcl.") {
+        return origin(
+            Provenance::Homebrew,
+            Confidence::High,
+            "label uses the homebrew.mxcl. prefix",
+        );
+    }
+    if plist.contains("/Cellar/") || command.contains("/Cellar/") {
+        return origin(
+            Provenance::Homebrew,
+            Confidence::Medium,
+            "path points into the Homebrew Cellar",
+        );
+    }
+
+    if command.contains("/nix/store/") {
+        return origin(
+            Provenance::Nix,
+            Confidence::High,
+            "command resolves into /nix/store",
+        );
+    }
+    if command.contains("/mise") || service.label.contains("mise") {
+        return origin(
+            Provenance::Mise,
+            Confidence::Medium,
+            "command or label references mise",
+        );
+    }
+
+    if plist.starts_with("/System/Library") {
+        return origin(
+            Provenance::System,
+            Confidence::High,
+            "plist lives under /System/Library",
+        );
+    }
+    if service.label.starts_with("com.apple.") {
+        return origin(
+            Provenance::System,
+            Confidence::High,
+            "label uses the com.apple. prefix",
+        );
+    }
+
+    if service.plist_path.is_none() {
+        return origin(
+            Provenance::RuntimeOnly,
+            Confidence::High,
+            "loaded in launchd with no plist on disk",
+        );
+    }
+
+    if looks_like_vendor_command(command) {
+        return origin(
+            Provenance::VendorApp,
+            Confidence::Medium,
+            "command lives inside an application bundle or Application Support",
+        );
+    }
+
+    if let Some(home) = dirs::home_dir()
+        && plist.starts_with(&home.join("Library/LaunchAgents").display().to_string())
+    {
+        return origin(
+            Provenance::UserPlist,
+            Confidence::High,
+            "plist lives in the user's ~/Library/LaunchAgents",
+        );
+    }
+
+    if plist.starts_with("/Library/Launch") {
+        return origin(
+            Provenance::VendorApp,
+            Confidence::Guess,
+            "machine-wide plist with no recognisable installer signature",
+        );
+    }
+
+    Origin::unknown()
+}
+
+fn looks_like_vendor_command(command: &str) -> bool {
+    command.contains(".app/Contents/")
+        || command.contains("/Library/Application Support/")
+        || command.contains("/Library/PrivilegedHelperTools/")
 }
 
 fn finish_health(service: &mut Service) {
@@ -655,6 +882,8 @@ mod tests {
             brew_formula: None,
             brew_status: None,
             safety_level: SafetyLevel::UserWritable,
+            elevation: ElevationNeeds::none(),
+            origin: Origin::unknown(),
             health: Vec::new(),
         }
     }
@@ -677,6 +906,8 @@ mod tests {
             brew_formula: None,
             brew_status: None,
             safety_level: SafetyLevel::ProtectedVendor,
+            elevation: ElevationNeeds::none(),
+            origin: Origin::unknown(),
             health: Vec::new(),
         }
     }
@@ -719,6 +950,169 @@ mod tests {
         };
 
         assert_eq!(status_from_state(&state, &config), ServiceStatus::Scheduled);
+    }
+
+    fn service_with_command(command: &str, plist: Option<&str>) -> Service {
+        let mut service = service_with_plist(LaunchConfig::empty());
+        service.config.program = Some(command.to_string());
+        service.plist_path = plist.map(PathBuf::from);
+        service
+    }
+
+    #[test]
+    fn nix_command_wins_over_the_system_directory_it_lives_in() {
+        let service = service_with_command(
+            "/nix/store/abc-my-daemon/bin/my-daemon",
+            Some("/Library/LaunchDaemons/org.nixos.my-daemon.plist"),
+        );
+
+        let origin = classify_origin(&service);
+
+        assert_eq!(origin.kind, Provenance::Nix);
+        assert_eq!(origin.confidence, Confidence::High);
+    }
+
+    #[test]
+    fn brew_formula_beats_every_path_heuristic() {
+        let mut service = service_with_command("/opt/homebrew/opt/redis/bin/redis-server", None);
+        service.brew_formula = Some("redis".to_string());
+
+        assert_eq!(classify_origin(&service).kind, Provenance::Homebrew);
+    }
+
+    #[test]
+    fn vendor_helper_in_user_agents_is_not_reported_as_a_hand_written_plist() {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        let plist = home.join("Library/LaunchAgents/com.vendor.helper.plist");
+        let service = service_with_command(
+            "/Applications/Vendor.app/Contents/MacOS/helper",
+            plist.to_str(),
+        );
+
+        assert_eq!(classify_origin(&service).kind, Provenance::VendorApp);
+    }
+
+    #[test]
+    fn loaded_job_without_a_plist_is_runtime_only() {
+        let mut service = runtime_only_service();
+        service.config.program = Some("/usr/bin/true".to_string());
+
+        assert_eq!(classify_origin(&service).kind, Provenance::RuntimeOnly);
+    }
+
+    #[test]
+    fn root_owned_agent_needs_sudo_for_the_plist_but_not_for_launchctl() {
+        // /Library/LaunchAgents is root-owned and not world-writable, yet its jobs
+        // live in the caller's gui domain.
+        let needs = elevation_for("gui/501", Some(Path::new("/Library/LaunchAgents")), 501);
+
+        assert!(!needs.runtime);
+        assert!(needs.plist_write);
+    }
+
+    #[test]
+    fn system_domain_needs_sudo_at_runtime() {
+        let needs = elevation_for("system", None, 501);
+
+        assert!(needs.runtime);
+    }
+
+    #[test]
+    fn root_needs_no_elevation_anywhere() {
+        let needs = elevation_for("system", Some(Path::new("/Library/LaunchDaemons")), 0);
+
+        assert_eq!(needs, ElevationNeeds::none());
+    }
+
+    #[test]
+    fn a_fresh_brew_snapshot_is_reused_instead_of_shelling_out() {
+        let cache = new_brew_cache();
+        let sentinel = BrewService {
+            name: "cached-sentinel".to_string(),
+            status: "started".to_string(),
+            user: None,
+            file: None,
+            exit_code: None,
+        };
+        let Ok(mut guard) = cache.lock() else {
+            panic!("cache lock");
+        };
+        *guard = Some(BrewSnapshot {
+            fetched: Instant::now(),
+            services: vec![sentinel],
+        });
+        drop(guard);
+
+        let mut warnings = Vec::new();
+        let services = read_brew_services(&mut warnings, Some(&cache), false);
+
+        // Getting the sentinel back proves `brew` was never spawned.
+        assert_eq!(
+            services.map(|list| list.into_iter().map(|brew| brew.name).collect::<Vec<_>>()),
+            Some(vec!["cached-sentinel".to_string()])
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn an_expired_brew_snapshot_is_not_reused() {
+        let cache = new_brew_cache();
+        let Ok(mut guard) = cache.lock() else {
+            panic!("cache lock");
+        };
+        let Some(stale) = Instant::now().checked_sub(BREW_TTL * 2) else {
+            return;
+        };
+        *guard = Some(BrewSnapshot {
+            fetched: stale,
+            services: vec![BrewService {
+                name: "cached-sentinel".to_string(),
+                status: "started".to_string(),
+                user: None,
+                file: None,
+                exit_code: None,
+            }],
+        });
+        drop(guard);
+
+        let mut warnings = Vec::new();
+        let services = read_brew_services(&mut warnings, Some(&cache), false);
+
+        let names = services
+            .unwrap_or_default()
+            .into_iter()
+            .map(|brew| brew.name)
+            .collect::<Vec<_>>();
+        assert!(!names.contains(&"cached-sentinel".to_string()));
+    }
+
+    #[test]
+    fn disabled_parses_modern_macos_wording() {
+        let text = r#"
+	disabled services = {
+		"com.docker.helper" => enabled
+		"com.example.off" => disabled
+	}
+"#;
+        let mut disabled = HashSet::new();
+        parse_disabled("gui/501", text, &mut disabled);
+
+        assert!(disabled.contains("gui/501:com.example.off"));
+        assert!(!disabled.contains("gui/501:com.docker.helper"));
+    }
+
+    #[test]
+    fn disabled_still_parses_legacy_boolean_wording() {
+        let text = "\t\t\"com.example.off\" => true\n\t\t\"com.example.on\" => false\n";
+        let mut disabled = HashSet::new();
+        parse_disabled("system", text, &mut disabled);
+
+        assert_eq!(
+            disabled.into_iter().collect::<Vec<_>>(),
+            vec!["system:com.example.off".to_string()]
+        );
     }
 
     #[test]

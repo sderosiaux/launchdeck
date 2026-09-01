@@ -26,6 +26,15 @@ impl ActionKind {
     }
 }
 
+/// Whether the planned command has to run as root. Kept separate from the command
+/// itself so the confirmation prompt can still show exactly what will run.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Elevation {
+    #[default]
+    None,
+    Sudo,
+}
+
 #[derive(Clone, Debug)]
 pub struct ActionPlan {
     pub kind: ActionKind,
@@ -33,6 +42,7 @@ pub struct ActionPlan {
     pub command: Vec<String>,
     pub warning: String,
     pub blocked_reason: Option<String>,
+    pub elevation: Elevation,
 }
 
 impl ActionPlan {
@@ -40,12 +50,16 @@ impl ActionPlan {
         if self.command.is_empty() {
             "-".to_string()
         } else {
-            self.command.join(" ")
+            effective_command(self).join(" ")
         }
     }
 
     pub fn is_blocked(&self) -> bool {
         self.blocked_reason.is_some()
+    }
+
+    pub fn needs_sudo(&self) -> bool {
+        self.elevation == Elevation::Sudo
     }
 }
 
@@ -53,6 +67,29 @@ impl ActionPlan {
 pub struct ActionResult {
     pub success: bool,
     pub message: String,
+}
+
+/// launchd scope and file ownership are independent axes, so elevation is decided
+/// per action, not per service: `launchctl kickstart gui/501/<label>` on an agent
+/// from `/Library/LaunchAgents` needs no privileges, while deleting that same
+/// root-owned plist does.
+fn elevation_for(service: &Service, kind: ActionKind) -> Elevation {
+    let needs_root = match kind {
+        ActionKind::Start | ActionKind::Stop | ActionKind::Restart | ActionKind::ToggleEnabled => {
+            service.elevation.runtime
+        }
+        ActionKind::ToggleRunAtLoad => service.elevation.plist_write,
+        ActionKind::Delete => service.elevation.plist_remove || service.elevation.runtime,
+        // `open -t` runs as the user; the editor is what will fail to save, and it
+        // says so far more clearly than we could.
+        ActionKind::EditPlist => false,
+    };
+
+    if needs_root {
+        Elevation::Sudo
+    } else {
+        Elevation::None
+    }
 }
 
 pub fn plan(service: &Service, kind: ActionKind) -> ActionPlan {
@@ -64,14 +101,6 @@ pub fn plan(service: &Service, kind: ActionKind) -> ActionPlan {
         );
     }
 
-    if matches!(service.safety_level, SafetyLevel::AdminRequired) {
-        return blocked(
-            service,
-            kind,
-            "this service needs admin privileges; sudo execution is not implemented yet",
-        );
-    }
-
     if matches!(service.safety_level, SafetyLevel::ProtectedVendor) {
         return blocked(
             service,
@@ -80,14 +109,68 @@ pub fn plan(service: &Service, kind: ActionKind) -> ActionPlan {
         );
     }
 
-    if matches!(
+    let elevation = elevation_for(service, kind);
+
+    let plan = if matches!(
         service.source,
         ServiceSource::Homebrew | ServiceSource::Both
     ) {
-        return plan_brew(service, kind);
+        plan_brew(service, kind)
+    } else {
+        plan_launchd(service, kind)
+    };
+
+    ActionPlan { elevation, ..plan }
+}
+
+/// The argv actually spawned, sudo prefix included. This is what the confirmation
+/// prompt shows, so it must stay identical to what `execute*` runs.
+pub fn effective_command(plan: &ActionPlan) -> Vec<String> {
+    match plan.elevation {
+        Elevation::None => plan.command.clone(),
+        Elevation::Sudo => {
+            let mut command = vec!["sudo".to_string(), "--".to_string()];
+            command.extend(plan.command.iter().cloned());
+            command
+        }
+    }
+}
+
+/// Run an elevated plan with stdio inherited, so `sudo` can prompt on the real
+/// terminal. The caller must have left the alternate screen and raw mode first;
+/// the password never passes through this process.
+pub fn execute_elevated(plan: &ActionPlan) -> ActionResult {
+    if let Some(reason) = &plan.blocked_reason {
+        return ActionResult {
+            success: false,
+            message: reason.clone(),
+        };
     }
 
-    plan_launchd(service, kind)
+    let command = effective_command(plan);
+    let Some((program, args)) = command.split_first() else {
+        return ActionResult {
+            success: false,
+            message: "action has no command".to_string(),
+        };
+    };
+
+    match Command::new(program).args(args).status() {
+        Ok(status) if status.success() => ActionResult {
+            success: true,
+            message: "command succeeded".to_string(),
+        },
+        // A cancelled password prompt is a normal outcome, not a failure to report
+        // as a broken command.
+        Ok(status) => ActionResult {
+            success: false,
+            message: format!("command exited with {status}"),
+        },
+        Err(err) => ActionResult {
+            success: false,
+            message: err.to_string(),
+        },
+    }
 }
 
 pub fn execute(plan: &ActionPlan) -> ActionResult {
@@ -165,6 +248,7 @@ fn plan_brew(service: &Service, kind: ActionKind) -> ActionPlan {
         ],
         warning: "Homebrew will update the service registration for this formula.".to_string(),
         blocked_reason: None,
+        elevation: Elevation::None,
     }
 }
 
@@ -274,6 +358,7 @@ fn plan_launchd(service: &Service, kind: ActionKind) -> ActionPlan {
         command,
         warning: warning_for_launchd(service, kind),
         blocked_reason: None,
+        elevation: Elevation::None,
     }
 }
 
@@ -320,6 +405,7 @@ fn blocked(service: &Service, kind: ActionKind, reason: &str) -> ActionPlan {
         command: Vec::new(),
         warning: reason.to_string(),
         blocked_reason: Some(reason.to_string()),
+        elevation: Elevation::None,
     }
 }
 
@@ -336,7 +422,7 @@ fn compact_output(bytes: &[u8], fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{LaunchConfig, ServiceScope};
+    use crate::model::{ElevationNeeds, LaunchConfig, Origin, ServiceScope};
     use std::path::PathBuf;
 
     fn service(source: ServiceSource, run_at_load: Option<bool>) -> Service {
@@ -360,8 +446,91 @@ mod tests {
             brew_formula: Some("demo".to_string()),
             brew_status: None,
             safety_level: SafetyLevel::UserWritable,
+            elevation: ElevationNeeds::none(),
+            origin: Origin::unknown(),
             health: Vec::new(),
         }
+    }
+
+    #[test]
+    fn global_agent_start_needs_no_sudo_even_though_its_plist_is_root_owned() {
+        let mut service = service(ServiceSource::Launchd, Some(false));
+        service.scope = ServiceScope::GlobalAgent;
+        service.safety_level = SafetyLevel::AdminRequired;
+        service.plist_path = Some(PathBuf::from(
+            "/Library/LaunchAgents/com.example.demo.plist",
+        ));
+        // Root owns the file, but the job still runs in the caller's gui domain.
+        service.elevation = ElevationNeeds {
+            runtime: false,
+            plist_write: true,
+            plist_remove: true,
+        };
+
+        let plan = plan(&service, ActionKind::Start);
+
+        assert!(!plan.is_blocked());
+        assert!(!plan.needs_sudo());
+        assert_eq!(plan.command.first().map(String::as_str), Some("launchctl"));
+    }
+
+    #[test]
+    fn deleting_a_root_owned_plist_is_planned_through_sudo() {
+        let mut service = service(ServiceSource::Launchd, Some(false));
+        service.elevation = ElevationNeeds {
+            runtime: false,
+            plist_write: true,
+            plist_remove: true,
+        };
+
+        let plan = plan(&service, ActionKind::Delete);
+
+        assert!(!plan.is_blocked());
+        assert!(plan.needs_sudo());
+        assert_eq!(
+            effective_command(&plan).first().map(String::as_str),
+            Some("sudo")
+        );
+        assert!(plan.command_display().starts_with("sudo -- "));
+    }
+
+    #[test]
+    fn system_daemon_runtime_actions_need_sudo() {
+        let mut service = service(ServiceSource::Launchd, Some(false));
+        service.scope = ServiceScope::SystemDaemon;
+        service.domain = "system".to_string();
+        service.elevation = ElevationNeeds {
+            runtime: true,
+            plist_write: true,
+            plist_remove: true,
+        };
+
+        let plan = plan(&service, ActionKind::Stop);
+
+        assert!(!plan.is_blocked());
+        assert!(plan.needs_sudo());
+        assert_eq!(
+            effective_command(&plan),
+            vec![
+                "sudo".to_string(),
+                "--".to_string(),
+                "launchctl".to_string(),
+                "bootout".to_string(),
+                "system/com.example.demo".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn editing_a_plist_never_asks_for_sudo() {
+        let mut service = service(ServiceSource::Launchd, Some(false));
+        service.elevation = ElevationNeeds {
+            runtime: true,
+            plist_write: true,
+            plist_remove: true,
+        };
+
+        assert!(!plan(&service, ActionKind::EditPlist).needs_sudo());
     }
 
     #[test]

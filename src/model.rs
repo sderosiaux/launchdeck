@@ -86,6 +86,129 @@ impl fmt::Display for SafetyLevel {
     }
 }
 
+/// Which tool put this job on the machine. Answers "who do I go edit to change
+/// this for good", which `launchctl` cannot tell you: reinstalling a Homebrew
+/// formula or re-running `nix-darwin switch` will silently undo a plist edit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Provenance {
+    Homebrew,
+    UserPlist,
+    Mise,
+    Nix,
+    VendorApp,
+    System,
+    RuntimeOnly,
+    Unknown,
+}
+
+impl Provenance {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Homebrew => "homebrew",
+            Self::UserPlist => "user-plist",
+            Self::Mise => "mise",
+            Self::Nix => "nix",
+            Self::VendorApp => "vendor-app",
+            Self::System => "system",
+            Self::RuntimeOnly => "runtime-only",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// How to change this service permanently, rather than just until the owning
+    /// tool next runs.
+    pub fn change_hint(self) -> &'static str {
+        match self {
+            Self::Homebrew => "manage with `brew services`",
+            Self::UserPlist => "edit the plist or use `launchctl`",
+            Self::Mise => "edit mise.toml, then re-run the mise bootstrap",
+            Self::Nix => "edit the Nix config, then rebuild/switch",
+            Self::VendorApp => "change it from the owning app's settings",
+            Self::System => "Apple-managed; inspect only",
+            Self::RuntimeOnly => "no plist on disk; inspect before changing",
+            Self::Unknown => "origin unknown; inspect before changing",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Confidence {
+    High,
+    Medium,
+    Guess,
+}
+
+impl Confidence {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Guess => "guess",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Origin {
+    pub kind: Provenance,
+    pub confidence: Confidence,
+    /// Why we picked this label, so the classification stays auditable.
+    pub evidence: Vec<String>,
+}
+
+impl Origin {
+    pub fn unknown() -> Self {
+        Self {
+            kind: Provenance::Unknown,
+            confidence: Confidence::Guess,
+            evidence: Vec::new(),
+        }
+    }
+
+    pub fn summary(&self) -> String {
+        format!("{} ({})", self.kind.label(), self.confidence.label())
+    }
+}
+
+/// What actually needs root, per axis. `launchd` scope and file ownership are
+/// independent: an agent in `/Library/LaunchAgents` is root-owned on disk but runs
+/// in the caller's `gui/<uid>` domain, so starting it needs no privileges at all
+/// while deleting its plist does.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ElevationNeeds {
+    /// Driving `launchctl` in this service's domain needs root.
+    pub runtime: bool,
+    /// Editing the plist in place needs root.
+    pub plist_write: bool,
+    /// Removing the plist from its directory needs root.
+    pub plist_remove: bool,
+}
+
+impl ElevationNeeds {
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Human summary for the detail view: which axes actually need root.
+    pub fn summary(&self) -> String {
+        let mut needs = Vec::new();
+        if self.runtime {
+            needs.push("launchctl");
+        }
+        if self.plist_write {
+            needs.push("plist edit");
+        }
+        if self.plist_remove {
+            needs.push("plist delete");
+        }
+        if needs.is_empty() {
+            "none needed".to_string()
+        } else {
+            format!("sudo for {}", needs.join(", "))
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CalendarSchedule {
     pub minute: Option<u64>,
@@ -234,6 +357,8 @@ pub struct Service {
     pub brew_formula: Option<String>,
     pub brew_status: Option<String>,
     pub safety_level: SafetyLevel,
+    pub elevation: ElevationNeeds,
+    pub origin: Origin,
     pub health: Vec<String>,
 }
 
@@ -245,13 +370,14 @@ impl Service {
             .map(|p| p.display().to_string())
             .unwrap_or_default();
         format!(
-            "{} {} {} {} {} {} {}",
+            "{} {} {} {} {} {} {} {}",
             self.label,
             self.display_name,
             self.source,
             self.scope.label(),
             path,
             self.brew_formula.clone().unwrap_or_default(),
+            self.origin.kind.label(),
             self.health.join(" ")
         )
         .to_lowercase()
