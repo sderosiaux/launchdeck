@@ -656,6 +656,12 @@ impl App {
             DetailItem::Stderr => self.open_logs(LogStream::Stderr),
             DetailItem::RunAtLoad => self.plan_action(ActionKind::ToggleRunAtLoad),
             DetailItem::Plist => self.plan_action(ActionKind::EditPlist),
+            DetailItem::Origin => {
+                self.status_line = match self.selected_service() {
+                    Some(service) => service.origin.kind.change_hint().to_string(),
+                    None => "no service selected".to_string(),
+                };
+            }
             item => {
                 self.status_line = format!("{} selected", item.label());
             }

@@ -8,17 +8,13 @@ pub fn detail_item_value(service: &Service, item: DetailItem) -> String {
         DetailItem::Domain => service.domain.clone(),
         DetailItem::Scope => service.scope.label().to_string(),
         DetailItem::Safety => service.safety_level.to_string(),
-        DetailItem::Origin => {
-            let mut value = format!(
-                "{} — {}",
-                service.origin.summary(),
-                service.origin.kind.change_hint()
-            );
-            if let Some(evidence) = service.origin.evidence.first() {
-                value.push_str(&format!(" [{evidence}]"));
-            }
-            value
-        }
+        // The change hint is generic per kind, so it goes to the status line on
+        // selection rather than padding every row; the evidence is what actually
+        // varies per service.
+        DetailItem::Origin => match service.origin.evidence.first() {
+            Some(evidence) => format!("{} — {evidence}", service.origin.summary()),
+            None => service.origin.summary(),
+        },
         DetailItem::Elevation => service.elevation.summary(),
         DetailItem::Plist => service
             .plist_path

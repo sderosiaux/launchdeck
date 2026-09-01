@@ -786,7 +786,7 @@ fn classify_origin(service: &Service) -> Origin {
         return origin(
             Provenance::VendorApp,
             Confidence::Medium,
-            "command lives inside an application bundle or Application Support",
+            "command lives inside an app bundle",
         );
     }
 
@@ -796,7 +796,7 @@ fn classify_origin(service: &Service) -> Origin {
         return origin(
             Provenance::UserPlist,
             Confidence::High,
-            "plist lives in the user's ~/Library/LaunchAgents",
+            "plist lives in ~/Library/LaunchAgents",
         );
     }
 
@@ -804,7 +804,7 @@ fn classify_origin(service: &Service) -> Origin {
         return origin(
             Provenance::VendorApp,
             Confidence::Guess,
-            "machine-wide plist with no recognisable installer signature",
+            "machine-wide plist, no installer signature",
         );
     }
 
